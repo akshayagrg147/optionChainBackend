@@ -70,7 +70,7 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'trading.wsgi.application'
+#WSGI_APPLICATION = 'trading.wsgi.application'
 ASGI_APPLICATION = 'trading.asgi.application'
 
 # Database
