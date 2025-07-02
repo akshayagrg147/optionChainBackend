@@ -1,43 +1,26 @@
-import asyncio
-import json
-import ssl
-import time
+# views.py
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
 import requests
-import websockets
-from channels.generic.websocket import AsyncWebsocketConsumer
-from google.protobuf.json_format import MessageToDict
-from . import MarketDataFeedV3_pb2 as pb
 
 
-class LiveOptionDataConsumer(AsyncWebsocketConsumer):
-    async def connect(self):
-        await self.accept()
-        self.keep_running = True
-        self.upstox_ws = None
+class OptionChainAPIView(APIView):
+    def post(self, request):
+        instrument_key = request.data.get('instrument_key')
+        expiry_date = request.data.get('expiry_date')
+        auth_header = request.headers.get('Authorization')
 
-    async def disconnect(self, close_code):
-        self.keep_running = False
-        if self.upstox_ws:
-            await self.upstox_ws.close()
+        # Check required fields
+        if not instrument_key or not expiry_date or not auth_header:
+            return Response(
+                {'error': 'instrument_key, expiry_date, and Authorization header are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-    async def receive(self, text_data):
-        payload = json.loads(text_data)
-        instrument_key = payload.get('instrument_key')
-        expiry_date = payload.get('expiry_date')
-        access_token = payload.get('access_token')
-
-        if not instrument_key or not expiry_date or not access_token:
-            await self.send(text_data=json.dumps({'error': 'Missing required fields'}))
-            return
-
-        asyncio.create_task(
-            self.fetch_and_stream_data(instrument_key, expiry_date, access_token)
-        )
-
-    async def fetch_and_stream_data(self, instrument_key, expiry_date, access_token):
-        option_chain_url = "https://api.upstox.com/v2/option/chain"
+        url = "https://api.upstox.com/v2/option/chain"
         headers = {
-            'Authorization': f'Bearer {access_token}',
+            'Authorization': auth_header,
             'Accept': 'application/json',
             'Content-Type': 'application/json'
         }
@@ -47,127 +30,8 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
         }
 
         try:
-            chain_response = requests.get(option_chain_url, headers=headers, params=params)
-            chain_response.raise_for_status()
-            option_data = chain_response.json()['data']
-        except Exception as e:
-            await self.send(text_data=json.dumps({'error': f'Option chain fetch failed: {str(e)}'}))
-            return
-
-        # Fetch current spot price
-        atm_strike = None
-        try:
-            spot_url = "https://api.upstox.com/v2/index/quote"
-            spot_params = {"symbol": instrument_key}
-            spot_resp = requests.get(spot_url, headers=headers, params=spot_params).json()
-            if spot_resp.get("data") and "last_price" in spot_resp["data"]:
-                last_price = spot_resp["data"]["last_price"]
-                atm_strike = round(last_price / 50) * 50  # Round to nearest 50
-        except Exception as e:
-            await self.send(text_data=json.dumps({'error': f'Failed to get spot price: {str(e)}'}))
-            return
-
-        instrument_keys = []
-        instrument_type_map = {}
-        for item in option_data:
-            strike = item.get('strike_price')
-            if atm_strike and abs(strike - atm_strike) > 200:
-                continue
-
-            if 'call_options' in item and item['call_options']:
-                ik = item['call_options']['instrument_key']
-                instrument_keys.append(ik)
-                instrument_type_map[ik] = {'type': 'CE', 'strike': strike}
-            if 'put_options' in item and item['put_options']:
-                ik = item['put_options']['instrument_key']
-                instrument_keys.append(ik)
-                instrument_type_map[ik] = {'type': 'PE', 'strike': strike}
-
-        if not instrument_keys:
-            await self.send(text_data=json.dumps({'error': 'No liquid instruments found.'}))
-            return
-
-        # WebSocket authorization
-        try:
-            auth_resp = requests.get(
-                "https://api.upstox.com/v3/feed/market-data-feed/authorize",
-                headers=headers
-            ).json()
-            ws_url = auth_resp['data']['authorized_redirect_uri']
-        except Exception as e:
-            await self.send(text_data=json.dumps({'error': f'WebSocket auth failed: {str(e)}'}))
-            return
-
-        ssl_context = ssl.create_default_context()
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl.CERT_NONE
-
-        last_update_time = time.time()
-
-        try:
-            async with websockets.connect(ws_url, ssl=ssl_context) as ws:
-                self.upstox_ws = ws
-
-                # Subscribe in chunks of 5
-                for i in range(0, len(instrument_keys), 5):
-                    chunk = instrument_keys[i:i + 5]
-                    sub_msg = {
-                        "guid": "some-guid",
-                        "method": "sub",
-                        "data": {
-                            "mode": "full",
-                            "instrumentKeys": chunk
-                        }
-                    }
-                    await ws.send(json.dumps(sub_msg).encode("utf-8"))
-                    await asyncio.sleep(0.2)
-
-                while self.keep_running:
-                    try:
-                        message = await asyncio.wait_for(ws.recv(), timeout=30)
-                        last_update_time = time.time()
-                    except asyncio.TimeoutError:
-                        if time.time() - last_update_time > 60:
-                            await self.send(text_data=json.dumps({'info': 'No data for 60s. Reconnecting...'}))
-                            break
-                        else:
-                            await self.send(text_data=json.dumps({'info': 'No new data in last 30s'}))
-                            continue
-
-                    try:
-                        decoded = pb.FeedResponse()
-                        decoded.ParseFromString(message)
-                        data_dict = MessageToDict(decoded)
-                    except Exception as e:
-                        await self.send(text_data=json.dumps({'error': f'Decode error: {str(e)}'}))
-                        continue
-
-                    feeds = data_dict.get("feeds", {})
-                    for ik, details in feeds.items():
-                        market_data = details.get("fullFeed", {}).get("marketFF", {})
-                        ltp_info = market_data.get("ltpc", {})
-                        ltp = ltp_info.get("ltp")
-                        ltt = ltp_info.get("ltt")
-
-                        if not ltp or not ltt:
-                            continue
-
-                        current_ts = int(time.time() * 1000)
-                        latency = current_ts - int(ltt)
-
-                        if latency > 5000:
-                            continue  # Skip stale ticks
-
-                        info = instrument_type_map.get(ik)
-                        if info:
-                            result = {
-                                'type': info['type'],
-                                'strike': info['strike'],
-                                'ltp': ltp,
-                                'latency_ms': latency,
-                                'timestamp': time.strftime('%H:%M:%S')
-                            }
-                            await self.send(text_data=json.dumps(result))
-
-        except Exception as e:
-            await self.send(text_data=json.dumps({'error': f'WebSocket error: {str(e)}'}))
+            response = requests.get(url, headers=headers, params=params)
+            response.raise_for_status()
+            return Response(response.json(), status=response.status_code)
+        except requests.RequestException as e:
+            return Response({'error': str(e)}, status=status.HTTP_502_BAD_GATEWAY)

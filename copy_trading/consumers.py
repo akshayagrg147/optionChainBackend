@@ -104,7 +104,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                         }
                     }
                     await ws.send(json.dumps(sub_msg).encode("utf-8"))
-                    await asyncio.sleep(0.2)
+                    await asyncio.sleep(2)
 
           
                 while self.keep_running:
