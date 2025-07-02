@@ -30,7 +30,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
             await self.send(text_data=json.dumps({'error': 'Missing required fields'}))
             return
 
-        # Start background task for streaming
+     
         asyncio.create_task(
             self.fetch_and_stream_data(instrument_key, expiry_date, access_token)
         )
@@ -92,7 +92,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
             async with websockets.connect(ws_url, ssl=ssl_context) as ws:
                 self.upstox_ws = ws
 
-                # Send subscriptions
+            
                 for i in range(0, len(instrument_keys), 5):
                     chunk = instrument_keys[i:i + 5]
                     sub_msg = {
@@ -106,13 +106,13 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                     await ws.send(json.dumps(sub_msg).encode("utf-8"))
                     await asyncio.sleep(0.2)
 
-                # Listen for messages
+          
                 while self.keep_running:
                     try:
                         message = await asyncio.wait_for(ws.recv(), timeout=30)
                         last_update_time = time.time()
                     except asyncio.TimeoutError:
-                        # Check if no data for 60s
+                        
                         if time.time() - last_update_time > 60:
                             await self.send(text_data=json.dumps({'info': 'No data for 60s. Reconnecting...'}))
                             break
