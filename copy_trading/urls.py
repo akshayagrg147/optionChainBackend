@@ -8,4 +8,7 @@ urlpatterns = [
                path('api/upstoxfunds/', UpstoxFundListCreateView.as_view(), name='upstoxfund-list-create'),
                path('api/upstoxfunds/<int:pk>/', UpstoxFundDetailUpdateView.as_view(), name='upstoxfund-detail-update'),
                path('api/upstox/all/', UpstoxFundAllView.as_view(), name='upstox-fund-all'),
+               path('upload-csv/', InstrumentCSVReplaceView.as_view(), name='upload_csv'),
+               path('fund-instrument/', FundInstrumentView.as_view(), name='create_fund_instrument'),           
+               path('fund-instrument/<int:pk>/', FundInstrumentView.as_view(), name='update_fund_instrument'), 
 ]

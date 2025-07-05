@@ -6,9 +6,9 @@ import requests
 import csv
 import requests
 import pandas as pd
-from .models import UpstoxFund
+from .models import UpstoxFund , InstrumentCSV ,FundInstrument
 from django.shortcuts import get_object_or_404
-from .serializers import UpstoxFundSerializer
+from .serializers import UpstoxFundSerializer ,InstrumentCSVSerializer , FundInstrumentSerializer
 
 
 class OptionChainAPIView(APIView):
@@ -204,3 +204,46 @@ class UpstoxFundAllView(APIView):
         all_funds = UpstoxFund.objects.all()
         serializer = UpstoxFundSerializer(all_funds, many=True)
         return Response(serializer.data)
+    
+    
+class InstrumentCSVReplaceView(APIView):
+
+    def post(self, request):
+       
+        existing_csv = InstrumentCSV.objects.first()
+        if existing_csv:
+            if existing_csv.file:
+                existing_csv.file.delete(save=False)
+            existing_csv.delete()
+
+    
+        serializer = InstrumentCSVSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({'message': 'New CSV uploaded and old one replaced.'}, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    
+    
+class FundInstrumentView(APIView):
+    def post(self, request):
+        serializer = FundInstrumentSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({'message': 'FundInstrument created successfully', 'data': serializer.data}, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def patch(self, request, pk):
+        instance = get_object_or_404(FundInstrument, pk=pk)
+        serializer = FundInstrumentSerializer(instance, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({'message': 'FundInstrument updated successfully', 'data': serializer.data}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    
+    
+    def get(self, request):
+        queryset = FundInstrument.objects.all()
+        serializer = FundInstrumentSerializer(queryset, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import UpstoxFund
+from .models import UpstoxFund,InstrumentCSV,FundInstrument
 
 class UpstoxFundSerializer(serializers.ModelSerializer):
     class Meta:
@@ -20,3 +20,18 @@ class UpstoxFundSerializer(serializers.ModelSerializer):
         instance.investable_amount = (instance.funds * instance.percentage) / 100
         instance.save()
         return instance
+    
+    
+from rest_framework import serializers
+from .models import InstrumentCSV
+
+class InstrumentCSVSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InstrumentCSV
+        fields = ['id', 'file', 'uploaded_at']
+
+
+class FundInstrumentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FundInstrument
+        fields = '__all__'
