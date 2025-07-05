@@ -16,11 +16,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
         super().__init__(*args, **kwargs)
         self.keep_running = True
         self.upstox_ws = None
-        self.latest_spot_price = None
-        self.market_value = None 
-        self.trade_executed = False
-        self.access_token = None 
-
+        self.latest_spot_price = None  
     async def connect(self):
         await self.accept()
 
@@ -31,7 +27,9 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
 
     async def receive(self, text_data):
         try:
+           
             print(f"Raw WebSocket message: {text_data}")
+          
             text_data = text_data.strip()
             payload = json.loads(text_data)
         except json.JSONDecodeError as e:
@@ -39,18 +37,16 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
             await self.send(text_data=json.dumps({'error': f'Invalid JSON payload: {str(e)}'}))
             return
 
-      
         instrument_key = payload.get('instrument_key')
         expiry_date = payload.get('expiry_date')
         access_token = payload.get('access_token')
         trading_symbol = payload.get('trading_symbol')
-        self.market_value = payload.get('market_value')  
-        self.access_token = access_token  
 
-        if not all([instrument_key, expiry_date, access_token, trading_symbol, self.market_value]):
-            await self.send(text_data=json.dumps({'error': 'Missing required fields (instrument_key, expiry_date, access_token, trading_symbol, market_value)'}))
+        if not instrument_key or not expiry_date or not access_token or not trading_symbol:
+            await self.send(text_data=json.dumps({'error': 'Missing required fields'}))
             return
 
+       
         market_instrument_key = instrument_key.replace('NSE_INDEX|Nifty 50', 'NSE_INDEX:Nifty 50')
         print(f"Using instrument_key: {instrument_key} for option chain, {market_instrument_key} for market quote and WebSocket")
 
@@ -81,44 +77,6 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=json.dumps({'warning': f'Failed to fetch initial spot price for {market_instrument_key} after {max_retries} attempts'}))
         return False
 
-    async def place_trade(self, trading_symbol, option_type):
-        """Place a trade using Upstox trade API (not called, kept for reference)."""
-        trade_url = "https://api.upstox.com/v2/order/place"
-        headers = {
-            'Authorization': f'Bearer {self.access_token}',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
-       
-        payload = {
-            "instrument_key": trading_symbol,
-            "quantity": 1,
-            "order_type": "MARKET",
-            "product": "I", 
-            "transaction_type": "BUY",
-            "validity": "DAY",
-            "price": 0, 
-            "trigger_price": 0,
-            "disclosed_quantity": 0,
-            "is_amo": False
-        }
-        try:
-            response = requests.post(trade_url, headers=headers, json=payload)
-            response.raise_for_status()
-            trade_data = response.json()
-            print(f"Trade placed successfully for {option_type}: {json.dumps(trade_data, indent=2)}")
-            await self.send(text_data=json.dumps({
-                'info': f'Trade placed successfully for {option_type}',
-                'trade_data': trade_data
-            }))
-            return True
-        except Exception as e:
-            print(f"Trade placement failed for {option_type}: {str(e)}")
-            await self.send(text_data=json.dumps({
-                'error': f'Trade placement failed for {option_type}: {str(e)}'
-            }))
-            return False
-
     async def fetch_and_stream_data(self, instrument_key, market_instrument_key, expiry_date, access_token, trading_symbol):
         headers = {
             'Authorization': f'Bearer {access_token}',
@@ -129,9 +87,10 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
         
         option_chain_url = "https://api.upstox.com/v2/option/chain"
         params = {
-            'instrument_key': instrument_key,
+            'instrument_key': instrument_key,  
             'expiry_date': expiry_date
         }
+
         try:
             chain_response = requests.get(option_chain_url, headers=headers, params=params)
             chain_response.raise_for_status()
@@ -141,7 +100,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
             await self.send(text_data=json.dumps({'error': f'Option chain fetch failed: {str(e)}'}))
             return
 
-       
+        
         instrument_type_map = {market_instrument_key: {'type': 'SPOT', 'strike': None}}
         for item in option_data:
             if 'call_options' in item and item['call_options'] and item['call_options']['instrument_key'] == trading_symbol:
@@ -160,6 +119,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
             return
 
         if self.latest_spot_price is None:
+          
             await self.fetch_initial_spot_price(market_instrument_key, headers)
 
         try:
@@ -232,19 +192,6 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                             if info['type'] == 'SPOT':
                                 self.latest_spot_price = ltp
                                 print(f"Updated spot price for {ik}: {ltp}")
-
-                              
-                                if not self.trade_executed and self.latest_spot_price is not None and self.market_value is not None:
-                                    option_type = instrument_type_map.get(trading_symbol, {}).get('type')
-                                    if option_type in ['CE', 'PE']:
-                                        if option_type == 'CE' and self.market_value >= self.latest_spot_price:
-                                            print(f"Condition met: market_value ({self.market_value}) >= spot_price ({self.latest_spot_price}). Trade completed for CE.")
-                                            print("Trade completed")
-                                            self.trade_executed = True 
-                                        elif option_type == 'PE' and self.market_value <= self.latest_spot_price:
-                                            print(f"Condition met: market_value ({self.market_value}) <= spot_price ({self.latest_spot_price}). Trade completed for PE.")
-                                            print("Trade completed")
-                                            self.trade_executed = True 
                             elif info['type'] in ['CE', 'PE']:
                                 result = {
                                     'type': info['type'],
