@@ -14,7 +14,6 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
         await self.accept()
         self.keep_running = True
         self.upstox_ws = None
-        self.nifty_spot_ltp = None
 
     async def disconnect(self, close_code):
         self.keep_running = False
@@ -75,7 +74,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
             await self.send(text_data=json.dumps({'error': 'No instruments found.'}))
             return
 
-        instrument_type_map[instrument_key] = {'type': 'SPOT', 'strike': None}
+        
         try:
             auth_resp = requests.get(
                 "https://api.upstox.com/v3/feed/market-data-feed/authorize",
@@ -96,17 +95,14 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
             async with websockets.connect(ws_url, ssl=ssl_context) as ws:
                 self.upstox_ws = ws
 
-            
-                
                 sub_msg = {
                         "guid": "some-guid",
                         "method": "sub",
                         "data": {
                             "mode": "full",
-                            "instrumentKeys": [trading_symbol],               }
+                            "instrumentKeys": [trading_symbol],}
                     }
                 await ws.send(json.dumps(sub_msg).encode("utf-8"))
-            
                 
 
                 last_sent_time = None
@@ -140,43 +136,27 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
 
                         if not ltp or not ltt:
                             continue
-                        
-                        
-                     
 
                         current_ts = int(time.time() * 1000)
                         latency = current_ts - int(ltt)
 
                         info = instrument_type_map.get(ik)
-                        if not info:
-                            continue
-                        
-                        
-                        if info['type'] == 'SPOT':
-                            self.nifty_spot_ltp = ltp
-                            print("📈 Spot LTP updated:", ltp)
-                            continue
-                        
-                        result = {
+                        if info:
+                            result = {
                                 'type': info['type'],
                                 'strike': info['strike'],
                                 'ltp': ltp,
                                 'latency_ms': latency,
                                 'timestamp': time.strftime('%H:%M:%S')
                             }
-                            
-                        if self.nifty_spot_ltp:
-                            result['spot_price'] = self.nifty_spot_ltp
+                            await self.send(text_data=json.dumps(result))
                             
                             
-                        await self.send(text_data=json.dumps(result))
-                            
-                            
-                        now = time.time()
-                        if last_sent_time:
-                            time_diff = now - last_sent_time
-                            print(f"⏱️ Time since last data sent: {time_diff * 1000:.2f} ms")
-                        last_sent_time = now
+                            now = time.time()
+                            if last_sent_time:
+                                time_diff = now - last_sent_time
+                                print(f"⏱️ Time since last data sent: {time_diff * 1000:.2f} ms")
+                            last_sent_time = now
 
         except Exception as e:
             await self.send(text_data=json.dumps({'error': f'WebSocket error: {str(e)}'}))

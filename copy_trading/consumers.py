@@ -6,19 +6,15 @@ import requests
 import websockets
 from channels.generic.websocket import AsyncWebsocketConsumer
 from google.protobuf.json_format import MessageToDict
-from datetime import datetime
-import pytz
 from . import MarketDataFeedV3_pb2 as pb
 
 
 class LiveOptionDataConsumer(AsyncWebsocketConsumer):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.keep_running = True
-        self.upstox_ws = None
-        self.latest_spot_price = None  
     async def connect(self):
         await self.accept()
+        self.keep_running = True
+        self.upstox_ws = None
+        self.latest_spot_price = None 
 
     async def disconnect(self, close_code):
         self.keep_running = False
@@ -26,68 +22,55 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
             await self.upstox_ws.close()
 
     async def receive(self, text_data):
-        try:
-           
-            print(f"Raw WebSocket message: {text_data}")
-          
-            text_data = text_data.strip()
-            payload = json.loads(text_data)
-        except json.JSONDecodeError as e:
-            print(f"JSON decode error: {str(e)}")
-            await self.send(text_data=json.dumps({'error': f'Invalid JSON payload: {str(e)}'}))
-            return
+        payload = json.loads(text_data)
 
         instrument_key = payload.get('instrument_key')
         expiry_date = payload.get('expiry_date')
         access_token = payload.get('access_token')
         trading_symbol = payload.get('trading_symbol')
+       
 
         if not instrument_key or not expiry_date or not access_token or not trading_symbol:
             await self.send(text_data=json.dumps({'error': 'Missing required fields'}))
             return
 
-       
-        market_instrument_key = instrument_key.replace('NSE_INDEX|Nifty 50', 'NSE_INDEX:Nifty 50')
-        print(f"Using instrument_key: {instrument_key} for option chain, {market_instrument_key} for market quote and WebSocket")
+      
+        asyncio.create_task(self.fetch_and_stream_data(instrument_key, expiry_date, access_token, trading_symbol))
+        asyncio.create_task(self.fetch_spot_price_forever(access_token, instrument_key))
 
-        asyncio.create_task(
-            self.fetch_and_stream_data(instrument_key, market_instrument_key, expiry_date, access_token, trading_symbol)
-        )
+    async def fetch_spot_price_forever(self, access_token, instrument_key):
+        headers = {"Authorization": f"Bearer {access_token}"}
+        url = "https://api.upstox.com/v2/market-quote/ltp"
 
-    async def fetch_initial_spot_price(self, market_instrument_key, headers, max_retries=3, retry_delay=5):
-        quote_url = "https://api.upstox.com/v2/market-quote/quotes"
-        params = {'instrument_key': market_instrument_key}
-        for attempt in range(max_retries):
+        while self.keep_running:
             try:
-                quote_response = requests.get(quote_url, headers=headers, params=params)
-                quote_response.raise_for_status()
-                quote_data = quote_response.json()
-                print(f"Market quote API response: {json.dumps(quote_data, indent=2)}")
-                if quote_data.get('status') == 'success' and market_instrument_key in quote_data.get('data', {}):
-                    self.latest_spot_price = quote_data['data'][market_instrument_key]['last_price']
-                    print(f"Initial spot price for {market_instrument_key}: {self.latest_spot_price}")
-                    return True
-                else:
-                    print(f"No quote data for {market_instrument_key} in attempt {attempt + 1}")
-            except Exception as e:
-                print(f"Initial spot price fetch failed for {market_instrument_key}: {str(e)}")
-                if attempt < max_retries - 1:
-                    print(f"Retrying in {retry_delay} seconds...")
-                    await asyncio.sleep(retry_delay)
-        await self.send(text_data=json.dumps({'warning': f'Failed to fetch initial spot price for {market_instrument_key} after {max_retries} attempts'}))
-        return False
+                response = requests.get(url, headers=headers, params={"symbol": instrument_key})
+                if response.status_code == 200:
+                    data = response.json()
+                    actual_key = list(data['data'].keys())[0]
+                    ltp = data['data'][actual_key].get('last_price')
+                    self.latest_spot_price = ltp  # Save latest spot price
 
-    async def fetch_and_stream_data(self, instrument_key, market_instrument_key, expiry_date, access_token, trading_symbol):
+                  
+                    # await self.send(text_data=json.dumps({
+                    #     'type': 'SPOT',
+                    #     'ltp': ltp,
+                    #     'timestamp': time.strftime('%H:%M:%S')
+                    # }))
+            except Exception as e:
+                await self.send(text_data=json.dumps({'error': f'Spot fetch error: {str(e)}'}))
+
+            await asyncio.sleep(1)
+
+    async def fetch_and_stream_data(self, instrument_key, expiry_date, access_token, trading_symbol):
+        option_chain_url = "https://api.upstox.com/v2/option/chain"
         headers = {
             'Authorization': f'Bearer {access_token}',
             'Accept': 'application/json',
             'Content-Type': 'application/json'
         }
-
-        
-        option_chain_url = "https://api.upstox.com/v2/option/chain"
         params = {
-            'instrument_key': instrument_key,  
+            'instrument_key': instrument_key,
             'expiry_date': expiry_date
         }
 
@@ -95,32 +78,30 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
             chain_response = requests.get(option_chain_url, headers=headers, params=params)
             chain_response.raise_for_status()
             option_data = chain_response.json()['data']
-            print(f"Option chain response: {json.dumps(option_data, indent=2)}")
         except Exception as e:
             await self.send(text_data=json.dumps({'error': f'Option chain fetch failed: {str(e)}'}))
             return
 
-        
-        instrument_type_map = {market_instrument_key: {'type': 'SPOT', 'strike': None}}
+        instrument_keys = []
+        instrument_type_map = {}
+
         for item in option_data:
-            if 'call_options' in item and item['call_options'] and item['call_options']['instrument_key'] == trading_symbol:
-                instrument_type_map[trading_symbol] = {'type': 'CE', 'strike': item.get('strike_price')}
-                self.latest_spot_price = item.get('underlying_spot_price')
-                print(f"Initial spot price from option chain for {instrument_key}: {self.latest_spot_price}")
-                break
-            if 'put_options' in item and item['put_options'] and item['put_options']['instrument_key'] == trading_symbol:
-                instrument_type_map[trading_symbol] = {'type': 'PE', 'strike': item.get('strike_price')}
-                self.latest_spot_price = item.get('underlying_spot_price')
-                print(f"Initial spot price from option chain for {instrument_key}: {self.latest_spot_price}")
-                break
+            if 'call_options' in item and item['call_options']:
+                ik = item['call_options']['instrument_key']
+                instrument_keys.append(ik)
+                instrument_type_map[ik] = {'type': 'CE', 'strike': item.get('strike_price')}
+            if 'put_options' in item and item['put_options']:
+                ik = item['put_options']['instrument_key']
+                instrument_keys.append(ik)
+                instrument_type_map[ik] = {'type': 'PE', 'strike': item.get('strike_price')}
 
-        if trading_symbol not in instrument_type_map:
-            await self.send(text_data=json.dumps({'error': f'Trading symbol {trading_symbol} not found in option chain'}))
+        if instrument_key:
+            instrument_keys.append(instrument_key)
+            instrument_type_map[instrument_key] = {'type': 'SPOT', 'strike': 'NIFTY'}
+
+        if not instrument_keys:
+            await self.send(text_data=json.dumps({'error': 'No instruments found.'}))
             return
-
-        if self.latest_spot_price is None:
-          
-            await self.fetch_initial_spot_price(market_instrument_key, headers)
 
         try:
             auth_resp = requests.get(
@@ -141,18 +122,19 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
         try:
             async with websockets.connect(ws_url, ssl=ssl_context) as ws:
                 self.upstox_ws = ws
+
                 sub_msg = {
                     "guid": "some-guid",
                     "method": "sub",
                     "data": {
                         "mode": "full",
-                        "instrumentKeys": [trading_symbol, market_instrument_key]
+                        "instrumentKeys": [trading_symbol,instrument_key]
                     }
                 }
                 await ws.send(json.dumps(sub_msg).encode("utf-8"))
-                print(f"Subscribed to: {trading_symbol}, {market_instrument_key}")
 
                 last_sent_time = None
+
                 while self.keep_running:
                     try:
                         message = await asyncio.wait_for(ws.recv(), timeout=30)
@@ -169,7 +151,6 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                         decoded = pb.FeedResponse()
                         decoded.ParseFromString(message)
                         data_dict = MessageToDict(decoded)
-                        print(f"Received WebSocket message for instruments: {list(data_dict.get('feeds', {}).keys())}")
                     except Exception as e:
                         await self.send(text_data=json.dumps({'error': f'Decode error: {str(e)}'}))
                         continue
@@ -189,25 +170,26 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
 
                         info = instrument_type_map.get(ik)
                         if info:
-                            if info['type'] == 'SPOT':
-                                self.latest_spot_price = ltp
-                                print(f"Updated spot price for {ik}: {ltp}")
-                            elif info['type'] in ['CE', 'PE']:
-                                result = {
-                                    'type': info['type'],
-                                    'strike': info['strike'],
-                                    'ltp': ltp,
-                                    'spot_price': self.latest_spot_price,
-                                    'latency_ms': latency,
-                                    'timestamp': datetime.now(pytz.timezone('Asia/Kolkata')).strftime('%H:%M:%S')
-                                }
-                                await self.send(text_data=json.dumps(result))
+                            
+                            a = self.latest_spot_price
+                            print(a)
+                            
+                            result = {
+                                'type': info['type'],
+                                'strike': info['strike'],
+                                'ltp': ltp,
+                                'latency_ms': latency,
+                                'spot_price': self.latest_spot_price,  
+                                'timestamp': time.strftime('%H:%M:%S')
+                            }
 
-                                now = time.time()
-                                if last_sent_time:
-                                    time_diff = now - last_sent_time
-                                    print(f"⏱️ Time since last data sent: {time_diff * 1000:.2f} ms")
-                                last_sent_time = now
+                            await self.send(text_data=json.dumps(result))
+
+                            now = time.time()
+                            if last_sent_time:
+                                time_diff = now - last_sent_time
+                                print(f"⏱️ Time since last data sent: {time_diff * 1000:.2f} ms")
+                            last_sent_time = now
 
         except Exception as e:
             await self.send(text_data=json.dumps({'error': f'WebSocket error: {str(e)}'}))

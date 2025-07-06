@@ -9,6 +9,7 @@ import pandas as pd
 from .models import UpstoxFund , InstrumentCSV ,FundInstrument
 from django.shortcuts import get_object_or_404
 from .serializers import UpstoxFundSerializer ,InstrumentCSVSerializer , FundInstrumentSerializer
+from rest_framework.permissions import IsAuthenticated
 
 
 class OptionChainAPIView(APIView):
@@ -226,15 +227,19 @@ class InstrumentCSVReplaceView(APIView):
     
     
 class FundInstrumentView(APIView):
+    permission_classes = [IsAuthenticated]
+    
     def post(self, request):
-        serializer = FundInstrumentSerializer(data=request.data)
+        data = request.data.copy()
+        data['user'] = request.user.id
+        serializer = FundInstrumentSerializer(data=data)
         if serializer.is_valid():
             serializer.save()
             return Response({'message': 'FundInstrument created successfully', 'data': serializer.data}, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def patch(self, request, pk):
-        instance = get_object_or_404(FundInstrument, pk=pk)
+        instance = get_object_or_404(FundInstrument, pk=pk,user=request.user)
         serializer = FundInstrumentSerializer(instance, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
@@ -242,8 +247,13 @@ class FundInstrumentView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
     
+    def delete(self, request, pk):
+        instance = get_object_or_404(FundInstrument, pk=pk, user=request.user)
+        instance.delete()
+        return Response({'message': 'FundInstrument deleted successfully'}, status=status.HTTP_200_OK)
+    
     
     def get(self, request):
-        queryset = FundInstrument.objects.all()
+        queryset = FundInstrument.objects.filter(user=request.user)
         serializer = FundInstrumentSerializer(queryset, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
