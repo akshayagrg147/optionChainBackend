@@ -23,7 +23,7 @@ class User(AbstractUser):
     username = models.CharField(max_length=150, blank=True, null=True)
     email = models.EmailField(unique=True)
 
-    # Optional — only if you want to store/display full name
+
     full_name = models.CharField(max_length=100, blank=True, null=True)
 
     objects = UserManager()

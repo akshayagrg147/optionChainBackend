@@ -15,6 +15,11 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
         self.keep_running = True
         self.upstox_ws = None
         self.latest_spot_price = None 
+        self.order_placed = False
+        self.ltp_at_order = None 
+        self.locked_ltp = None
+        self.sell_order_placed = False
+        
 
     async def disconnect(self, close_code):
         self.keep_running = False
@@ -28,12 +33,21 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
         expiry_date = payload.get('expiry_date')
         access_token = payload.get('access_token')
         trading_symbol = payload.get('trading_symbol')
-       
+        target_market_price = payload.get('target_market_price')
+        step = payload.get('step')
+        expected_profit_percent = payload.get('profit_percent', 0.5)
+        self.step = step
+        self.expected_profit_percent = expected_profit_percent
 
-        if not instrument_key or not expiry_date or not access_token or not trading_symbol:
+        if not instrument_key or not expiry_date or not access_token or not trading_symbol or not target_market_price or not step:
             await self.send(text_data=json.dumps({'error': 'Missing required fields'}))
             return
 
+        try:
+            self.target_market_price = float(target_market_price)  
+        except ValueError:
+            await self.send(text_data=json.dumps({'error': 'Invalid target_market_price'}))
+            return
       
         asyncio.create_task(self.fetch_and_stream_data(instrument_key, expiry_date, access_token, trading_symbol))
         asyncio.create_task(self.fetch_spot_price_forever(access_token, instrument_key))
@@ -102,6 +116,8 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
         if not instrument_keys:
             await self.send(text_data=json.dumps({'error': 'No instruments found.'}))
             return
+        
+        print(instrument_keys)
 
         try:
             auth_resp = requests.get(
@@ -182,7 +198,142 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                 'spot_price': self.latest_spot_price,  
                                 'timestamp': time.strftime('%H:%M:%S')
                             }
+                            
+                            if not self.order_placed and self.latest_spot_price is not None and info['type'] == 'CE':
+                                print(info['type'])
+                                try:
+                                    if self.target_market_price <= float(self.latest_spot_price):
+                                        
+                                        print(f'✅ In PlaceOrder Execution Block - Spot: {self.latest_spot_price}, Target: {self.target_market_price}')
+                                        self.ltp_at_order = ltp
+                                        print(self.ltp_at_order)# ✅ Store only LTP
+                                        self.order_placed = True
+                                        # order_response = requests.post(
+                                        #     "https://your-api-url.com/place-order", 
+                                        #     headers={
+                                        #         "Authorization": f"Bearer {access_token}",
+                                        #         "Content-Type": "application/json"
+                                        #     },
+                                        #     json={
+                                        #         "symbol": trading_symbol,
+                                        #         "order_type": "BUY",
+                                        #         "quantity": 1,
+                                        #         "price": self.latest_spot_price
+                                        #     }
+                                        # )
+                                        # if order_response.status_code == 200:
+                                        #     await self.send(text_data=json.dumps({'success': 'Order placed'}))
+                                        # else:
+                                        #     await self.send(text_data=json.dumps({'error': f'Order failed: {order_response.text}'}))
+                                        # self.order_placed = True
+                                        
+                                        await self.send(text_data=json.dumps({
+                                        'message': 'Order placed successfully...Waiting for square off',
+                                        'market_value':self.latest_spot_price,
+                                        'ltp': self.ltp_at_order,           
+                                        'timestamp': time.strftime('%H:%M:%S')
 
+        }))
+                                except Exception as e:
+                                    await self.send(text_data=json.dumps({'error': f'Order exception: {str(e)}'}))
+                                    
+                                                                          
+                            if not self.order_placed and self.latest_spot_price is not None and info['type'] == 'PE':
+                                print(info['type'])
+                                try:
+                                    if self.target_market_price >= float(self.latest_spot_price):
+                                        
+                                        print(f'✅ In PlaceOrder Execution Block - Spot: {self.latest_spot_price}, Target: {self.target_market_price}')
+                                        self.ltp_at_order = ltp  
+                                        self.order_placed = True
+                                        # order_response = requests.post(
+                                        #     "https://your-api-url.com/place-order", 
+                                        #     headers={
+                                        #         "Authorization": f"Bearer {access_token}",
+                                        #         "Content-Type": "application/json"
+                                        #     },
+                                        #     json={
+                                        #         "symbol": trading_symbol,
+                                        #         "order_type": "BUY",
+                                        #         "quantity": 1,
+                                        #         "price": self.latest_spot_price
+                                        #     }
+                                        # )
+                                        # if order_response.status_code == 200:
+                                        #     await self.send(text_data=json.dumps({'success': 'Order placed'}))
+                                        # else:
+                                        #     await self.send(text_data=json.dumps({'error': f'Order failed: {order_response.text}'}))
+                                        # self.order_placed = True
+                                        
+                                        await self.send(text_data=json.dumps({
+                                        'message': 'Order placed successfully....Waiting for square off',
+                                        'market_value':self.latest_spot_price,
+                                        'ltp': self.ltp_at_order,          
+                                        'timestamp': time.strftime('%H:%M:%S')
+
+                                            }))
+                            
+                                        
+                                        
+                                except Exception as e:
+                                    await self.send(text_data=json.dumps({'error': f'Order exception: {str(e)}'}))
+                            
+                            
+                            if self.order_placed and not self.sell_order_placed and self.ltp_at_order is not None:
+                                try:
+                                    current_ltp = float(ltp)
+
+       
+                                    if self.locked_ltp is None:
+                                        self.step_size = round(float(self.ltp_at_order) * self.step / 100, 2)
+                                        self.locked_lTP = round(float(self.ltp_at_order) - self.step_size, 2)
+                                        self.previous_ltp = float(self.ltp_at_order)
+                                    
+                                        await self.send(text_data=json.dumps({
+                                            'init_SL': True,
+                                            'locked_LTP': self.locked_lTP,
+                                            'step_size': self.step_size
+                                                }))
+
+      
+                                    if current_ltp > self.previous_ltp:
+                                        while current_ltp >= self.locked_lTP + self.step_size:
+                                            self.locked_lTP = round(self.locked_lTP + self.step_size, 2)
+                                        if self.locked_lTP == self.ltp_at_order:
+                                            self.locked_lTP = round(self.locked_lTP - self.step_size, 2)
+
+       
+                                    pnl_percent = round(((current_ltp - float(self.ltp_at_order)) / float(self.ltp_at_order)) * 100, 2)
+
+   
+                                    if pnl_percent < 0 and current_ltp <= self.locked_lTP:
+                                        self.sell_order_placed = True
+                                        print('In selling Block ')
+                                        await self.send(text_data=json.dumps({
+                                            'message': 'SL HIT in LOSS. In selling block ',
+                                            'ltp': current_ltp,
+                                            'locked_LTP': self.locked_LTP
+                                            }))
+                                
+                                    elif pnl_percent >= 0 and current_ltp < self.previous_ltp and current_ltp <= self.locked_lTP:
+                                        print('in selling block ')
+                                        await self.send(text_data=json.dumps({
+                                                'message': 'In selling block ',
+                                                'ltp': current_ltp,
+                                                'locked_LTP': self.locked_lTP
+                                                                                        }))
+                                        if pnl_percent < self.expected_profit_percent:
+                                            await self.send(text_data=json.dumps({
+                                                        'info': 'Profit less than expected. Consider reverse trade.'
+                                                                }))
+                                    
+
+                                    self.previous_ltp = current_ltp
+
+                                except Exception as e:
+                                        await self.send(text_data=json.dumps({'error': f'Trailing SL error: {str(e)}'}))
+                            
+      
                             await self.send(text_data=json.dumps(result))
 
                             now = time.time()

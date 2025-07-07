@@ -46,7 +46,7 @@ class FundInstrument(models.Model):
     investable_amount = models.DecimalField(max_digits=15, decimal_places=2, validators=[MinValueValidator(0)])
     call_lot = models.PositiveIntegerField(default=0)
     put_lot = models.PositiveIntegerField(default=0)
-    token = models.CharField(max_length=100, unique=True, null=True, blank=True)
+    token = models.CharField(max_length=500, unique=True, null=True, blank=True)
 
     def __str__(self):
         return f"{self.name} - {self.funds}"

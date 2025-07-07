@@ -10,6 +10,7 @@ from .models import UpstoxFund , InstrumentCSV ,FundInstrument
 from django.shortcuts import get_object_or_404
 from .serializers import UpstoxFundSerializer ,InstrumentCSVSerializer , FundInstrumentSerializer
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny
 
 
 class OptionChainAPIView(APIView):
@@ -63,10 +64,13 @@ class UpstoxMultiAccountFundsFromXLSX(APIView):
                     'Accept': 'application/json',
                     'Authorization': f'Bearer {access_token}'
                 }
-
+  
                 try:
                     response = requests.get(url, headers=headers)
                     data = response.json()
+                    print(f"{name} -> Bearer Token: {access_token}")
+                    print(f"Authorization Header: Bearer {access_token}")
+                
 
                     if response.status_code == 200 and data.get("status") == "success":
                         funds = data.get("data", {})
@@ -95,6 +99,8 @@ class UpstoxMultiAccountFundsFromXLSX(APIView):
         
         
 class UpstoxMarginAPIView(APIView):
+    authentication_classes = []            
+    permission_classes = [AllowAny] 
     def get(self, request):
         auth_header = request.headers.get("Authorization")
         if not auth_header or not auth_header.startswith("Bearer "):
@@ -134,14 +140,7 @@ class UpstoxMarginAPIView(APIView):
             
             available_margin = equity.get("availableMargin", 0.00)
             
-            obj, created = UpstoxFund.objects.update_or_create(
-                name=user_name,
-                defaults={
-                    "funds": available_margin,
-                    
-                }
-            )
-
+       
             return Response({
                 "success": True,
                 "user_name": user_name,
@@ -257,3 +256,45 @@ class FundInstrumentView(APIView):
         queryset = FundInstrument.objects.filter(user=request.user)
         serializer = FundInstrumentSerializer(queryset, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    
+    
+    
+class GetUpstoxFundsAPIView(APIView):
+    authentication_classes = []            
+    permission_classes = [AllowAny]   
+
+    def get(self, request):
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            return Response(
+                {"error": "Authorization header with Bearer token is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        access_token = auth_header.split("Bearer ")[1].strip()
+
+        url = "https://api.upstox.com/v2/user/get-funds-and-margin"
+        headers = {
+            "Accept": "application/json",
+            "Authorization": f"Bearer {access_token}"
+        }
+
+        try:
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+            return Response({"status": "success", "data": data}, status=status.HTTP_200_OK)
+
+        except requests.exceptions.HTTPError as http_err:
+            return Response({
+                "status": "error",
+                "message": f"HTTP error occurred: {str(http_err)}",
+                "upstox_response": response.json()
+            }, status=response.status_code)
+
+        except Exception as err:
+            return Response({
+                "status": "error",
+                "message": f"Other error occurred: {str(err)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
