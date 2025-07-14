@@ -11,6 +11,10 @@ from django.shortcuts import get_object_or_404
 from .serializers import UpstoxFundSerializer ,InstrumentCSVSerializer , FundInstrumentSerializer
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.permissions import AllowAny
+from django.conf import settings
+import os
+import json
+import datetime
 
 
 class OptionChainAPIView(APIView):
@@ -298,3 +302,101 @@ class GetUpstoxFundsAPIView(APIView):
                 "status": "error",
                 "message": f"Other error occurred: {str(err)}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            
+            
+class GetTradingSymbol(APIView):
+    def post(self, request):
+        name = request.data.get("name")
+        expiry = request.data.get("expiry")
+        option_type = request.data.get("option_type")
+        strike = request.data.get("strike")
+        
+        
+        
+        
+        
+
+        if not all([name, expiry, option_type, strike]):
+            return Response({"error": "All fields are required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        json_path = os.path.join(settings.BASE_DIR, 'nse.json')
+        try:
+            with open(json_path, 'r') as f:
+                data = json.load(f)
+                for item in data:
+                    if (
+                            str(item.get("exchange")).strip().upper() == str(name).strip().upper() and
+                            str(item.get("expiry")) == str(expiry) and
+                            str(item.get("instrument_type")).strip().upper() == str(option_type).strip().upper() and
+                            float(item.get("strike_price")) == float(strike)
+                        ):
+                        
+                        return Response({"tradingsymbol": item.get("trading_symbol")}, status=status.HTTP_200_OK)
+                        
+                        
+
+            return Response({"error": "Matching record not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        except FileNotFoundError:
+            return Response({"error": "JSON file not found"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        except json.JSONDecodeError:
+            return Response({"error": "Invalid JSON format"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+
+class GetTradingSymbolsCSV(APIView):
+    def post(self, request):
+        option_requests = request.data.get("options")  # Expecting a list
+
+        if not isinstance(option_requests, list) or len(option_requests) == 0:
+            return Response({"error": "Payload must contain a non-empty 'options' list"}, status=status.HTTP_400_BAD_REQUEST)
+
+        csv_path = os.path.join(settings.BASE_DIR, 'nse.csv')
+
+        try:
+            with open(csv_path, newline='') as csvfile:
+                reader = list(csv.DictReader(csvfile))
+                results = []
+
+                for option in option_requests:
+                    name = option.get("name")
+                    expiry = option.get("expiry")
+                    option_type = option.get("option_type")
+                    strike = option.get("strike")
+
+                    if not all([name, expiry, option_type, strike]):
+                        return Response({"error": "Each option must contain name, expiry, option_type, and strike"}, status=status.HTTP_400_BAD_REQUEST)
+
+                    match_found = False
+                    for row in reader:
+                        if (
+                            str(row.get("name")).strip().upper() == str(name).strip().upper() and
+                            str(row.get("expiry")).strip() == str(expiry).strip() and
+                            str(row.get("option_type")).strip().upper() == str(option_type).strip().upper() and
+                            float(row.get("strike")) == float(strike)
+                        ):
+                            results.append({
+                                "name": name,
+                                "expiry": expiry,
+                                "option_type": option_type,
+                                "strike": strike,
+                                "tradingsymbol": row.get("tradingsymbol")
+                            })
+                            match_found = True
+                            break
+
+                    if not match_found:
+                        results.append({
+                            "name": name,
+                            "expiry": expiry,
+                            "option_type": option_type,
+                            "strike": strike,
+                            "error": "Not found"
+                        })
+
+                return Response({"results": results}, status=status.HTTP_200_OK)
+
+        except FileNotFoundError:
+            return Response({"error": "CSV file not found"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        except Exception as e:
+            return Response({"error": f"Unexpected error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

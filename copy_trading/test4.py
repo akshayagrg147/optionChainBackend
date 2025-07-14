@@ -15,14 +15,13 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
         self.keep_running = True
         self.upstox_ws = None
         self.latest_spot_price = None 
-        self.order_placed = False
+        self.order_placedCE= False
+        self.order_placedPE = False
         self.ltp_at_order = None 
         self.locked_ltp = None
         self.sell_order_placed = False
-        
-        self.step = Non
-        self.expected_profit_percent = 0.5
-        
+        self.test_ltp_values = [1920.75, 1922, 1924, 1926, 1928,1927]
+        self.test_ltp_index = 0
         
 
     async def disconnect(self, close_code):
@@ -37,17 +36,20 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
         expiry_date = payload.get('expiry_date')
         access_token = payload.get('access_token')
         trading_symbol = payload.get('trading_symbol')
-        target_market_price = payload.get('target_market_price')
+        target_market_priceCE = payload.get('target_market_price_CE')
+        target_market_pricePE = payload.get('target_market_price_PE')
         step = payload.get('step')
         expected_profit_percent = payload.get('profit_percent', 0.5)
-       
+        self.step = step
+        self.expected_profit_percent = expected_profit_percent
 
-        if not instrument_key or not expiry_date or not access_token or not trading_symbol or not target_market_price:
+        if not instrument_key or not expiry_date or not access_token or not trading_symbol or not target_market_priceCE or not target_market_pricePE or not step:
             await self.send(text_data=json.dumps({'error': 'Missing required fields'}))
             return
 
         try:
-            self.target_market_price = float(target_market_price)  
+            self.target_market_priceCE = float(target_market_priceCE)  
+            self.target_market_pricePE= float(target_market_pricePE)  
         except ValueError:
             await self.send(text_data=json.dumps({'error': 'Invalid target_market_price'}))
             return
@@ -177,39 +179,64 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                     feeds = data_dict.get("feeds", {})
                     for ik, details in feeds.items():
                         market_data = details.get("fullFeed", {}).get("marketFF", {})
-                        ltp_info = market_data.get("ltpc", {})
-                        ltp = ltp_info.get("ltp")
-                        ltt = ltp_info.get("ltt")
+                        #ltp_info = market_data.get("ltpc", {})
+                        #ws_ltp = ltp_info.get("ltp")
+                        #ltt = ltp_info.get("ltt")
+                        if not hasattr(self, 'test_ltp_values'):
+                            self.test_ltp_values = [1910.75, 1892.4, 1904.8, 1885.6, 1920.3]
+                            self.test_ltp_index = 0
 
-                        if not ltp or not ltt:
-                            continue
+                        if self.test_ltp_index >= len(self.test_ltp_values):
+                            self.test_ltp_index = 0  # Restart the list
 
-                        current_ts = int(time.time() * 1000)
-                        latency = current_ts - int(ltt)
+                        ltp = self.test_ltp_values[self.test_ltp_index]
+                        self.test_ltp_index += 1
 
+                        #if not ws_ltp or not ltt:
+                            #continue
+
+                        #current_ts = int(time.time() * 1000)
+                        #latency = current_ts - int(ltt)
+
+                        rest_ltp = None
+                        try:
+                            ltp_response = requests.get(
+                                "https://api.upstox.com/v2/market-quote/ltp",
+                                headers={"Authorization": f"Bearer {access_token}"},
+                                params={"symbol": ik}
+                            )
+                            if ltp_response.status_code == 200:
+                                ltp_data = ltp_response.json()
+                                key = list(ltp_data['data'].keys())[0]
+                                rest_ltp = ltp_data['data'][key].get('last_price')
+                        except Exception as e:
+                            rest_ltp = ltp
+                            
+                            
                         info = instrument_type_map.get(ik)
                         if info:
                             
                             a = self.latest_spot_price
-                            print(a)
+    
                             
                             result = {
                                 'type': info['type'],
                                 'strike': info['strike'],
                                 'ltp': ltp,
-                                'latency_ms': latency,
+                                #'latency_ms': latency,
                                 'spot_price': self.latest_spot_price,  
                                 'timestamp': time.strftime('%H:%M:%S')
                             }
                             
-                            if not self.order_placed and self.latest_spot_price is not None and info['type'] == 'CE':
+                            if not self.order_placedCE and self.latest_spot_price is not None:
                                 print(info['type'])
                                 try:
-                                    if self.target_market_price <= float(self.latest_spot_price):
+                                    if self.target_market_priceCE <= float(self.latest_spot_price):
                                         
-                                        print(f'✅ In PlaceOrder Execution Block - Spot: {self.latest_spot_price}, Target: {self.target_market_price}')
-                                        self.ltp_at_order = ltp  # ✅ Store only LTP
-                                        self.order_placed = True
+                                        print(f'✅ In PlaceOrder Execution Block - Spot  CE: {self.latest_spot_price}, Target: {self.target_market_priceCE}')
+                                        self.ltp_at_order = ltp
+                                        print(self.ltp_at_order)# ✅ Store only LTP
+                                        self.order_placedCE  = True
                                         # order_response = requests.post(
                                         #     "https://your-api-url.com/place-order", 
                                         #     headers={
@@ -230,7 +257,8 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                         # self.order_placed = True
                                         
                                         await self.send(text_data=json.dumps({
-                                        'message': 'Order placed successfully',
+                                        'message': 'Order placed successfully...Waiting for square off',
+                                        'market_value':self.latest_spot_price,
                                         'ltp': self.ltp_at_order,           
                                         'timestamp': time.strftime('%H:%M:%S')
 
@@ -239,14 +267,15 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                     await self.send(text_data=json.dumps({'error': f'Order exception: {str(e)}'}))
                                     
                                                                           
-                            if not self.order_placed and self.latest_spot_price is not None and info['type'] == 'PE':
+                            if not self.order_placedPE and self.latest_spot_price is not None:
                                 print(info['type'])
                                 try:
-                                    if self.target_market_price >= float(self.latest_spot_price):
+                                    if self.target_market_pricePE >= float(self.latest_spot_price):
                                         
-                                        print(f'✅ In PlaceOrder Execution Block - Spot: {self.latest_spot_price}, Target: {self.target_market_price}')
-                                        self.ltp_at_order = ltp  # ✅ Store only LTP
-                                        self.order_placed = True
+                                        print(f'✅ In PlaceOrder Execution Block - Spot: PE {self.latest_spot_price}, Target: {self.target_market_pricePE}')
+                                        self.ltp_at_order = ltp 
+                                        print('live ltp at purchase',self.ltp_at_order) 
+                                        self.order_placedPE  = True
                                         # order_response = requests.post(
                                         #     "https://your-api-url.com/place-order", 
                                         #     headers={
@@ -267,7 +296,8 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                         # self.order_placed = True
                                         
                                         await self.send(text_data=json.dumps({
-                                        'message': 'Order placed successfully',
+                                        'message': 'Order placed successfully....Waiting for square off',
+                                        'market_value':self.latest_spot_price,
                                         'ltp': self.ltp_at_order,          
                                         'timestamp': time.strftime('%H:%M:%S')
 
@@ -279,51 +309,65 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                     await self.send(text_data=json.dumps({'error': f'Order exception: {str(e)}'}))
                             
                             
-                            if self.order_placed and not self.sell_order_placed and self.ltp_at_order is not None:
+                            if self.order_placedPE or self.order_placedCE and not self.sell_order_placed and self.ltp_at_order is not None:
                                 try:
                                     current_ltp = float(ltp)
+                                 
 
-       
                                     if self.locked_ltp is None:
                                         self.step_size = round(float(self.ltp_at_order) * self.step / 100, 2)
-                                        self.locked_lTP = round(float(self.ltp_at_order) - self.step_size, 2)
+                                
+                                        print('step size new',self.step_size)
+                                        self.locked_ltp = round(float(self.ltp_at_order) - self.step_size, 2)
+                                        print(' set locked ltp',self.locked_ltp)
+                                        print(f"📈 Current LTP: {current_ltp}")
                                         self.previous_ltp = float(self.ltp_at_order)
+                                        print('previous LTP',self.previous_ltp)
                                     
                                         await self.send(text_data=json.dumps({
-                                            'init_SL': True,
-                                            'locked_LTP': self.locked_LTP,
+                                            'init_SL': True,    
+                                            'locked_LTP': self.locked_ltp,
                                             'step_size': self.step_size
                                                 }))
 
-      
+                                        print('Locked',self.locked_ltp)
+                                    print('current ltp and self.previour ltp',current_ltp,self.previous_ltp )
                                     if current_ltp > self.previous_ltp:
-                                        while current_ltp >= self.locked_LTP + self.step_size:
-                                            self.locked_LTP = round(self.locked_LTP + self.step_size, 2)
-                                        if self.locked_LTP == self.ltp_at_order:
-                                            self.locked_LTP = round(self.locked_LTP - self.step_size, 2)
+                                        while current_ltp >= self.locked_ltp + self.step_size:
+                                            self.locked_ltp = round(self.locked_ltp + self.step_size, 2)
+                                            print('inwhile',self.locked_ltp)
+                                        if self.locked_ltp == self.ltp_at_order:
+                                            self.locked_ltp = round(self.locked_ltp - self.step_size, 2)
+                                            print('in',self.locked_ltp)
 
-       
+                                    print('locked',self.locked_ltp)
                                     pnl_percent = round(((current_ltp - float(self.ltp_at_order)) / float(self.ltp_at_order)) * 100, 2)
+                                    print('pnl_percentage',pnl_percent)
+                                    print(f"📈 Buy: {self.ltp_at_order} | Locked SL: {self.locked_ltp} | Live LTP: {current_ltp} | P&L: {pnl_percent}%")
 
-   
-                                    if pnl_percent < 0 and current_ltp <= self.locked_LTP:
-                                        self.sell_order_placed = True
-                                        await self.send(text_data=json.dumps({
-                                            'message': 'SL HIT in LOSS. Selling...',
-                                            'ltp': current_ltp,
-                                            'locked_LTP': self.locked_LTP
-                                            }))
-                                
-                                    elif pnl_percent >= 0 and current_ltp < self.previous_ltp and current_ltp <= self.locked_LTP:
-                                        await self.send(text_data=json.dumps({
-                                                'message': 'SL HIT in PROFIT. Selling...',
-                                                'ltp': current_ltp,
-                                                'locked_LTP': self.locked_LTP
-                                                                                        }))
-                                        if pnl_percent < self.expected_profit_percent:
+                                    print('after pnl percentaeg',self.locked_ltp)
+                                    if pnl_percent < 0:
+                                        if current_ltp < self.locked_ltp:
+                                            self.sell_order_placed = True
+                                            print('In selling Block ')
                                             await self.send(text_data=json.dumps({
+                                                'message': 'SL HIT in LOSS. In selling block',
+                                                'ltp': current_ltp,
+                                                'locked_LTP': self.locked_ltp
+                                                }))
+                                        print('new again ltp',self.locked_ltp)
+                                
+                                    else:
+                                        if current_ltp < self.previous_ltp and current_ltp < self.locked_ltp:
+                                            print("🚨 SL Hit in PROFIT! Preparing SELL order...")
+                                            if pnl_percent < self.expected_profit_percent:
+                                            
+                                                print('Reverse Trade Executed ')
+                                                await self.send(text_data=json.dumps({
                                                         'info': 'Profit less than expected. Consider reverse trade.'
                                                                 }))
+                                            
+                                        
                                     
 
                                     self.previous_ltp = current_ltp
@@ -331,10 +375,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                 except Exception as e:
                                         await self.send(text_data=json.dumps({'error': f'Trailing SL error: {str(e)}'}))
                             
-                            
-                            
-                            
-
+      
                             await self.send(text_data=json.dumps(result))
 
                             now = time.time()

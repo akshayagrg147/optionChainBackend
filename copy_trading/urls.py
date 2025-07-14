@@ -12,4 +12,6 @@ urlpatterns = [
                path('fund-instrument/', FundInstrumentView.as_view(), name='create_fund_instrument'),           
                path('fund-instrument/<int:pk>/', FundInstrumentView.as_view(), name='update_fund_instrument'), 
                path('api/upstoxx/fundss/', GetUpstoxFundsAPIView.as_view(), name='get-upstox-funds'),
+               path('api/get-tradingsymbol/', GetTradingSymbol.as_view(), name='get_trading_symbol'),
+               path('api/get-tradingsymbolcsv/', GetTradingSymbolsCSV.as_view(), name='get_trading_symbol'),
 ]
