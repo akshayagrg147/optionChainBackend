@@ -10,6 +10,7 @@ from . import MarketDataFeedV3_pb2 as pb
 import os
 import csv
 from django.conf import settings
+import time
 class LiveOptionDataConsumer(AsyncWebsocketConsumer): 
     def reset_trade_flags(self):
         self.sell_order_placed = False
@@ -256,18 +257,26 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                         
                         try:
                             if not self.buy_token:
-                              
+                                
+                                start_time = time.perf_counter()
                                 trading_symbol_for_ik = key_to_symbol.get(ik)
                                 if trading_symbol_for_ik:
                                     ltp_response = requests.get(
                                     "https://api.upstox.com/v2/market-quote/ltp",
                                     headers={"Authorization": f"Bearer {access_token}"},
                                     params={"symbol":trading_symbol_for_ik}
+                                    
                                         )
+                                    
+                                    
+                                end_time = time.perf_counter()  # end timestamp
+                                latency_ms = round((end_time - start_time) * 1000, 2)
                                 if ltp_response.status_code == 200:
                                     ltp_data = ltp_response.json()
                                     key = list(ltp_data['data'].keys())[0]
                                     rest_ltp = ltp_data['data'][key].get('last_price')
+                                    
+                                    
                                   
                                     
                             else:
@@ -281,6 +290,8 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                 ltp_data = ltp_response.json()
                                 key = list(ltp_data['data'].keys())[0]
                                 rest_ltp = ltp_data['data'][key].get('last_price')
+                            
+                            print(f"🕒 REST LTP fetched in {latency_ms} ms")
                                 
                                
                                 
