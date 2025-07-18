@@ -15,9 +15,11 @@ from django.conf import settings
 import os
 import json
 import datetime
-
+import time
 
 class OptionChainAPIView(APIView):
+    authentication_classes = []            
+    permission_classes = [AllowAny] 
     def post(self, request):
         instrument_key = request.data.get('instrument_key')
         expiry_date = request.data.get('expiry_date')
@@ -42,9 +44,18 @@ class OptionChainAPIView(APIView):
         }
 
         try:
+            start_time = time.time()
             response = requests.get(url, headers=headers, params=params)
+            duration_ms = round((time.time() - start_time) * 1000, 2)  # In milliseconds
+
             response.raise_for_status()
-            return Response(response.json(), status=response.status_code)
+            data = response.json()
+
+            return Response({
+                "response_time_ms": duration_ms,
+                "data": data
+            }, status=response.status_code)
+           
         except requests.RequestException as e:
             return Response({'error': str(e)}, status=status.HTTP_502_BAD_GATEWAY)
 
@@ -346,7 +357,7 @@ class GetTradingSymbol(APIView):
 
 class GetTradingSymbolsCSV(APIView):
     def post(self, request):
-        option_requests = request.data.get("options")  # Expecting a list
+        option_requests = request.data.get("options")
 
         if not isinstance(option_requests, list) or len(option_requests) == 0:
             return Response({"error": "Payload must contain a non-empty 'options' list"}, status=status.HTTP_400_BAD_REQUEST)

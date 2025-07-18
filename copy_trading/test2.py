@@ -17,7 +17,7 @@ def get_instrument_key_by_trading_symbol(file_path, trading_symbol_input):
 
 file_path = r'C:\Users\PRATEEK SINGH\OneDrive\Desktop\option.py\trading\nse.json'
 
-trading_symbol = 'JPYINR61CE27MAR26'  # Input symbol without spaces
+trading_symbol = 'NIFTY27DEC30000CE' 
 instrument_key = get_instrument_key_by_trading_symbol(file_path, trading_symbol)
 
 print("Instrument Key:", instrument_key)

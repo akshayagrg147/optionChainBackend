@@ -425,7 +425,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                     
                                     
                                     current_ltp = float(rest_ltp)
-                                    print(current_ltp)
+                             
                                     
                                     if self.locked_ltp is None:
                                         self.step_size = round(float(self.ltp_at_order) * self.step / 100, 2) # gap 
@@ -436,7 +436,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                             'locked_LTP': self.locked_ltp,
                                             'step_size': self.step_size
                                                 }))   
-                                   
+                                    print(f"📈 Buy: {self.ltp_at_order} | Locked SL: {self.locked_ltp} | Live LTP: {current_ltp}")
                                     if current_ltp > self.previous_ltp:
                                         while current_ltp >= self.locked_ltp + self.step_size:
                                             self.locked_ltp = round(self.locked_ltp + self.step_size, 2)
@@ -447,7 +447,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                     pnl_percent = round(((current_ltp - float(self.ltp_at_order)) / float(self.ltp_at_order)) * 100, 2)
                                     print(f"📈 Buy: {self.ltp_at_order} | Locked SL: {self.locked_ltp} | Live LTP: {current_ltp} | P&L: {pnl_percent}%")
 
-                                    if current_ltp <= self.locked_ltp and current_ltp < self.previous_ltp:
+                                    if (current_ltp <= self.locked_ltp and current_ltp < self.previous_ltp) or (current_ltp < self.locked_ltp) :
                                         self.sell_order_placed = True
                                         print(f'Selling the token : {self.buy_token}') 
                                         data = {
