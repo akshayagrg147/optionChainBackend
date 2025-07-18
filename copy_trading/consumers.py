@@ -11,6 +11,7 @@ import os
 import csv
 from django.conf import settings
 import time
+from datetime import datetime
 class LiveOptionDataConsumer(AsyncWebsocketConsumer): 
     def reset_trade_flags(self):
         self.sell_order_placed = False
@@ -260,6 +261,8 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                 
                                 start_time = time.perf_counter()
                                 trading_symbol_for_ik = key_to_symbol.get(ik)
+                                now = datetime.now()
+                                current_time = now.strftime('%H:%M:%S.') + str(now.microsecond // 1000).zfill(3)
                                 if trading_symbol_for_ik:
                                     ltp_response = requests.get(
                                     "https://api.upstox.com/v2/market-quote/ltp",
@@ -271,6 +274,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                     
                                 end_time = time.perf_counter()  # end timestamp
                                 latency_ms = round((end_time - start_time) * 1000, 2)
+                                current_time = datetime.now().strftime('%H:%M:%S.%f')
                                 if ltp_response.status_code == 200:
                                     ltp_data = ltp_response.json()
                                     key = list(ltp_data['data'].keys())[0]
@@ -287,11 +291,14 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                 params={"symbol": self.buy_token}
                             )
                             if ltp_response.status_code == 200:
+                                now = datetime.now()
+                                current_time = now.strftime('%H:%M:%S.') + str(now.microsecond // 1000).zfill(3)
                                 ltp_data = ltp_response.json()
                                 key = list(ltp_data['data'].keys())[0]
                                 rest_ltp = ltp_data['data'][key].get('last_price')
                             
                             print(f"🕒 REST LTP fetched in {latency_ms} ms")
+                            print(f"🕒 Full timestamp with microseconds: {current_time}")
                                 
                                
                                 
