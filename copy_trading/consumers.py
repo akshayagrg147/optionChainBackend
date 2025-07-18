@@ -298,7 +298,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                 rest_ltp = ltp_data['data'][key].get('last_price')
                             
                             print(f"🕒 REST LTP fetched in {latency_ms} ms")
-                            print(f"🕒 Full timestamp with microseconds: {current_time}")
+                            print(f"🕒 Full timestamp with milliseconds: {current_time}")
                                 
                                
                                 
