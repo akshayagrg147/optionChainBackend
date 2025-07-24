@@ -31,16 +31,15 @@ def get_access_token(code):
         "grant_type": "authorization_code"
     }
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
-    
+
     print("\n🔄 Exchanging code for access token...")
     res = requests.post(token_url, headers=headers, data=payload)
     data = res.json()
-   
 
     if "access_token" not in data:
         print("❌ Failed to get access token:\n", json.dumps(data, indent=2))
         exit(1)
-    
+
     return data["access_token"]
 
 access_token = get_access_token(auth_code)
@@ -52,12 +51,12 @@ def get_ws_url(token):
     headers = {"Authorization": f"Bearer {token}"}
     res = requests.get(ws_auth_url, headers=headers)
     data = res.json()
-    print("data:", json.dumps(data, indent=2))
-    
+    print("🧾 WS Auth Response:", json.dumps(data, indent=2))
+
     if "authorized_redirect_uri" not in data.get("data", {}):
         print("❌ Failed to get WebSocket URL:\n", json.dumps(data, indent=2))
         exit(1)
-    
+
     return data["data"]["authorized_redirect_uri"]
 
 ws_url = get_ws_url(access_token)
@@ -66,14 +65,18 @@ print("✅ Authorized WebSocket URL:", ws_url)
 # ------------------- STEP 5: WebSocket Connection -------------------
 def on_open(ws):
     print("📡 Connected to WebSocket!")
+
+    # Use valid instrument key - Reliance example
     subscription_payload = {
         "guid": "abcde",
         "method": "sub",
         "data": {
-            "mode": "ltpc",
-            "instrumentKeys": ["NSE_EQ|INE467B01029"]  # You can add more instrument keys here
+            "mode": "full",  # Use 'full' for complete data
+            "instrumentKeys": ["NSE_FO|49489"]  # Reliance Industries
         }
     }
+
+    print("🔄 Sending subscription payload:\n", json.dumps(subscription_payload, indent=2))
     ws.send(json.dumps(subscription_payload))
 
 def on_message(ws, message):
@@ -83,7 +86,7 @@ def on_error(ws, error):
     print("❗ WebSocket Error:", error)
 
 def on_close(ws, status_code, msg):
-    print("❌ WebSocket Disconnected.")
+    print("❌ WebSocket Disconnected. Code:", status_code, "Msg:", msg)
 
 print("\n🔌 Connecting to WebSocket...\n")
 ws = websocket.WebSocketApp(ws_url,
@@ -91,4 +94,6 @@ ws = websocket.WebSocketApp(ws_url,
                             on_message=on_message,
                             on_error=on_error,
                             on_close=on_close)
+
+# Run WebSocket Forever
 ws.run_forever()
