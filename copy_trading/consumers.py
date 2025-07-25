@@ -210,7 +210,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                     "method": "sub",
                     "data": {
                         "mode": "full",
-                        "instrumentKeys": [ce_token,pe_token,ce_reverse_token,pe_reverse_token]
+                        "instrumentKeys": [ce_token,pe_token,ce_reverse_token,pe_reverse_token,instrument_key]
                     }
                 }
                 await ws.send(json.dumps(sub_msg).encode("utf-8"))

@@ -41,7 +41,8 @@ INSTALLED_APPS = [
     'channels',
     'copy_trading',
     'corsheaders',
-    'authentication'
+    'authentication',
+    'Manualtrade'
 ]
 
 MIDDLEWARE = [
