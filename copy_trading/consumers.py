@@ -235,10 +235,13 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                         decoded = pb.FeedResponse()
                         decoded.ParseFromString(message)
                         data_dict = MessageToDict(decoded)
+                        print(data_dict)
                         
                     except Exception as e:
                         await self.send(text_data=json.dumps({'error': f'Decode error: {str(e)}'}))
                         continue
+                    
+                    
 
                     feeds = data_dict.get("feeds", {})
                     for ik, details in feeds.items():

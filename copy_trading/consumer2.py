@@ -12,7 +12,7 @@ import csv
 from django.conf import settings
 import time
 from datetime import datetime
-class LiveOptionData(AsyncWebsocketConsumer): 
+class LiveOptionDataConsumer2(AsyncWebsocketConsumer): 
     def reset_trade_flags(self):
         self.sell_order_placed = False
         self.locked_ltp = None
@@ -97,16 +97,11 @@ class LiveOptionData(AsyncWebsocketConsumer):
         self.step = step
         self.expected_profit_percent = expected_profit_percent
         
-        if not instrument_key or not expiry_date or not access_token or not target_market_priceCE or not target_market_pricePE or not step:
+        if not instrument_key or not expiry_date or not access_token:
             await self.send(text_data=json.dumps({'error': 'Missing required fields'}))
             return
-        try:
-            self.target_market_priceCE = float(target_market_priceCE)  
-            self.target_market_pricePE= float(target_market_pricePE)  
-        except ValueError:
-            await self.send(text_data=json.dumps({'error': 'Invalid target_market_price'}))
-            return  
-        asyncio.create_task(self.fetch_and_stream_data(instrument_key, expiry_date, access_token, trading_symbol,trading_symbol_2))
+       
+        asyncio.create_task(self.fetch_and_stream_data(instrument_key, expiry_date, access_token, trading_symbol))
         asyncio.create_task(self.fetch_spot_price_forever(access_token, instrument_key))
 
     async def fetch_spot_price_forever(self, access_token, instrument_key):
@@ -116,17 +111,19 @@ class LiveOptionData(AsyncWebsocketConsumer):
         while self.keep_running:
             try:
                 response = requests.get(url, headers=headers, params={"symbol": instrument_key})
+               
                 if response.status_code == 200:
                     data = response.json()
                     actual_key = list(data['data'].keys())[0]
                     ltp = data['data'][actual_key].get('last_price')
                     self.latest_spot_price = ltp  
+                    
             except Exception as e:
                 await self.send(text_data=json.dumps({'error': f'Spot fetch error: {str(e)}'}))
 
             await asyncio.sleep(1)
 
-    async def fetch_and_stream_data(self, instrument_key, expiry_date, access_token, trading_symbol,trading_symbol_2):
+    async def fetch_and_stream_data(self, instrument_key, expiry_date, access_token, trading_symbol):
         option_chain_url = "https://api.upstox.com/v2/option/chain"
            
         headers = {
@@ -187,16 +184,12 @@ class LiveOptionData(AsyncWebsocketConsumer):
 
         ce_token = instrument_token.get("CE")
         ce_reverse_token = instrument_token.get("PE")
-        b = trading_symbol_2
-        instrument_token_2 = self.get_instrument_keys_by_trading_symbol(file_path, b)
-        pe_token = instrument_token_2.get("PE")
-        pe_reverse_token = instrument_token_2.get("CE")
+        
 
         print("🎯 CE Token:", ce_token)
         print("🎯 CE REVERSE Token:", ce_reverse_token)
         
-        print("🎯 PE Token:", pe_token)
-        print("🎯 Pe REVERSE Token:", pe_reverse_token)
+
         last_update_time = time.time()
 
         try:
@@ -208,7 +201,7 @@ class LiveOptionData(AsyncWebsocketConsumer):
                     "method": "sub",
                     "data": {
                         "mode": "full",
-                        "instrumentKeys": [ce_token,instrument_key]
+                        "instrumentKeys": [ce_token,ce_reverse_token,instrument_key]
                     }
                 }
                 await ws.send(json.dumps(sub_msg).encode("utf-8"))
@@ -218,7 +211,8 @@ class LiveOptionData(AsyncWebsocketConsumer):
                 while self.keep_running:
                     try:
                         message = await asyncio.wait_for(ws.recv(), timeout=30)
-                      
+                       
+                     
                         last_update_time = time.time()
                     except asyncio.TimeoutError:
                         if time.time() - last_update_time > 60:
@@ -232,9 +226,20 @@ class LiveOptionData(AsyncWebsocketConsumer):
                         decoded = pb.FeedResponse()
                         decoded.ParseFromString(message)
                         data_dict = MessageToDict(decoded)
+                        print(data_dict)
+                        
                     except Exception as e:
                         await self.send(text_data=json.dumps({'error': f'Decode error: {str(e)}'}))
                         continue
+                    
+                    try:
+                        if 'feeds' in data_dict:
+                            for instrument_key, feed_data in data_dict['feeds'].items():
+                                if instrument_key == 'NSE_INDEX|Nifty 50':
+                                    spot = feed_data['fullFeed']['indexFF']['ltpc']['ltp']
+                                    
+                    except Exception as e:
+                        print(f"Error while extracting LTP: {e}")
 
                     feeds = data_dict.get("feeds", {})
                     for ik, details in feeds.items():
@@ -247,35 +252,39 @@ class LiveOptionData(AsyncWebsocketConsumer):
                         if not ws_ltp or not ltt:
                             continue
 
-                        current_ts = int(time.time() * 1000)
-                        latency = current_ts - int(ltt)
+                       
+                      
                         
                         ltt_int = int(ltt)
+                        current_ts = int(time.time() * 1000)
+                        latency = current_ts - ltt_int
                         ltt_dt = datetime.fromtimestamp(ltt_int / 1000.0)
-                        ltt_str = ltt_dt.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-                        print(f"🕒 WebSocket LTT (ms): {ltt_int} | Human: {ltt_str} | LTP: {ws_ltp} | Latency: {latency}ms")
+                        ltt_str = ltt_dt.strftime("%H:%M:%S.%f")[:-3]
+                        #print('socket timing',ltt_str)
+                        
+                        
+                        current_dt = datetime.fromtimestamp(current_ts / 1000.0)
+                       
+                        
+                        current_str = current_dt.strftime("%H:%M:%S.%f")[:-3]
+                        
+                        #print('current timing',current_str)
+                        
+                        
+                        # print("📡 Upstox sent LTT at: ", ltt_dt.strftime("%H:%M:%S.%f")[:-3])
+                        # print("🖥️ My system received at:", current_dt.strftime("%H:%M:%S.%f")[:-3])
+                        # print(f"⏱️ Delay from Upstox to me: {latency} ms | LTP: {ws_ltp}")
+    
 
                         
-                        timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-                        print('TIME', timestamp)
+                        log_line = f"WebSocket LTT (ms): {ltt_int} | Human: {ltt_str} | LTP: {ws_ltp} | Latency: {latency}ms | Socket Timing :{ltt_str} | Current Timing :{current_str}\n"
+                        #print(log_line.strip()) 
                         
-                        current_time = datetime.now()
+                        with open("websocket_latency_lognew2new.txt", "a") as logfile:
+                            logfile.write(log_line)
                         
-                        print('🕓 Current Time:', current_time.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3])
-                        
-                        
-                        
-                        
-                        
-                        
-
                         rest_ltp = ws_ltp
-                        key_to_symbol = {
-                                    ce_token: trading_symbol,
-                                    ce_reverse_token: trading_symbol_2,
-                                    pe_token: trading_symbol_2,
-                                    pe_reverse_token: trading_symbol
-                                    }
+                       
                         info = instrument_type_map.get(ik)
                         if info:
                             
@@ -285,11 +294,239 @@ class LiveOptionData(AsyncWebsocketConsumer):
                                 'strike': info['strike'],
                                 'ltp': rest_ltp,
                                 'latency_ms': latency,
-                                'spot_price': self.latest_spot_price,  
+                                'spot_price': spot,
                                 'timestamp': time.strftime('%H:%M:%S')
                             }
                             
+                            if ik == ce_token and not self.order_placedCE and self.latest_spot_price is not None:   
+                                try:
+                                    #print("inside ce ")
+                                    if self.target_market_priceCE <= float(self.latest_spot_price):
+                                        print("inside ce2")
+                                        
+                                       
+                                        print(f'✅ In PlaceOrder Execution Block CE condition : {self.latest_spot_price}, Target: {self.target_market_priceCE}')
+
+                                        self.ltp_at_order = rest_ltp
+                                        print(self.ltp_at_order)
+                                        self.order_placedCE  = True
+                                        self.order_placedPE  = True
+                                        self.buy_token = ce_token
+                                        self.reverse_token = ce_reverse_token
+                                        print('BUY TOKEN ',ce_token)
+                                        data = {
+                                                        "quantity": 1,
+                                                        "product": "D",
+                                                        "validity": "DAY",
+                                                        "price": 0,
+                                                        "tag": "string",
+                                                        "instrument_token": ce_token,
+                                                        "order_type": "MARKET",
+                                                        "transaction_type": "BUY",
+                                                        "disclosed_quantity": 0,
+                                                        "trigger_price": 0,
+                                                        "is_amo": False  
+                                                    }
+                                        
+
+                                        print(data)
+  
+                                            # order_response = requests.post(
+                                            #     "https://your-api-url.com/place-order", 
+                                            #     headers={
+                                            #         "Authorization": f"Bearer {access_token}",
+                                            #         "Content-Type": "application/json"
+                                            #     },
+                                            #     json={
+                                            #         "symbol": trading_symbol,
+                                            #         "order_type": "BUY",
+                                            #         "quantity": 1,
+                                            #         "price": self.latest_spot_price
+                                            #     }
+                                            # )
+                                            # if order_response.status_code == 200:
+                                            #     await self.send(text_data=json.dumps({'success': 'Order placed'}))
+                                            # else:
+                                            #     await self.send(text_data=json.dumps({'error': f'Order failed: {order_response.text}'}))
+                                            # self.order_placed = True
+                                            
+                                        await self.send(text_data=json.dumps({
+                                            'message': 'Order placed successfully...Waiting for square off',
+                                            'market_value':self.latest_spot_price,
+                                            'ltp': self.ltp_at_order,           
+                                            'timestamp': time.strftime('%H:%M:%S')
+
+        }))
+                                except Exception as e:
+                                    await self.send(text_data=json.dumps({'error': f'Order exception: {str(e)}'}))
+                                                                                          
+                            if not self.order_placedPE and self.latest_spot_price is not None:
+                                #print(info['type'])
+                                try:
+                                    
+                                    if self.target_market_pricePE >= float(self.latest_spot_price):
+                                        if ik == pe_token:
+                                        
+                                            print(f'✅ In PlaceOrder Execution Block PE: SPOT: {self.latest_spot_price}, Target: {self.target_market_pricePE}')
+                                            self.ltp_at_order = rest_ltp 
+                                            
+                                            print('live ltp at purchase',self.ltp_at_order) 
+                                            self.order_placedPE  = True
+                                            self.order_placedCE  = True
+                                            self.buy_token = pe_token
+                                            self.reverse_token = pe_reverse_token
+                                            print('BUY TOKEN ',pe_token)
+                                            data = {
+                                                        "quantity": 1,
+                                                        "product": "D",
+                                                        "validity": "DAY",
+                                                        "price": 0,
+                                                        "tag": "string",
+                                                        "instrument_token": pe_token,
+                                                        "order_type": "MARKET",
+                                                        "transaction_type": "BUY",
+                                                        "disclosed_quantity": 0,
+                                                        "trigger_price": 0,
+                                                        "is_amo": False  
+                                                    }
+                                            print(data)
+                                            # order_response = requests.post(
+                                            #     "https://your-api-url.com/place-order", 
+                                            #     headers={
+                                            #         "Authorization": f"Bearer {access_token}",
+                                            #         "Content-Type": "application/json"
+                                            #     },
+                                            #     json={
+                                            #         "symbol": trading_symbol,
+                                            #         "order_type": "BUY",
+                                            #         "quantity": 1,
+                                            #         "price": self.latest_spot_price
+                                            #     }
+                                            # )
+                                            # if order_response.status_code == 200:
+                                            #     await self.send(text_data=json.dumps({'success': 'Order placed'}))
+                                            # else:
+                                            #     await self.send(text_data=json.dumps({'error': f'Order failed: {order_response.text}'}))
+                                            # self.order_placed = True
+                                            
+                                            await self.send(text_data=json.dumps({
+                                            'message': 'Order placed successfully....Waiting for square off',
+                                            'market_value':self.latest_spot_price,
+                                            'ltp': self.ltp_at_order,          
+                                            'timestamp': time.strftime('%H:%M:%S')
+
+                                            }))
+                                      
+                                except Exception as e:
+                                    await self.send(text_data=json.dumps({'error': f'Order exception: {str(e)}'}))
+                            
+                            
+                            if (self.order_placedPE or self.order_placedCE) and not self.sell_order_placed and self.ltp_at_order is not None and ik == self.buy_token:
+                                try:
+                                              
+                                    current_ltp = float(rest_ltp)
+
+                                    if self.locked_ltp is None:
+                                        self.step_size = round(float(self.ltp_at_order) * self.step / 100, 2) # gap 
+                                        self.locked_ltp = round(float(self.ltp_at_order) - self.step_size, 2) # 150 - 0.75
+                                        self.previous_ltp = float(self.ltp_at_order)
+                                        await self.send(text_data=json.dumps({
+                                            'init_SL': True,    
+                                            'locked_LTP': self.locked_ltp,
+                                            'step_size': self.step_size
+                                                }))   
+                                    print(f"📈 Buy: {self.ltp_at_order} | Locked SL: {self.locked_ltp} | Live LTP: {current_ltp}")
+                                    if current_ltp > self.previous_ltp:
+                                        while current_ltp >= self.locked_ltp + self.step_size:
+                                            self.locked_ltp = round(self.locked_ltp + self.step_size, 2)
+                                            
+                                        if self.locked_ltp == self.ltp_at_order:
+                                            self.locked_ltp = round(self.locked_ltp - self.step_size, 2)
+                                            
+                                    pnl_percent = round(((current_ltp - float(self.ltp_at_order)) / float(self.ltp_at_order)) * 100, 2)
+                                    print(f"📈 Buy: {self.ltp_at_order} | Locked SL: {self.locked_ltp} | Live LTP: {current_ltp} | P&L: {pnl_percent}%")
+
+                                    if (current_ltp <= self.locked_ltp and current_ltp < self.previous_ltp) or (current_ltp < self.locked_ltp) :
+                                        self.sell_order_placed = True
+                                        print(f'Selling the token : {self.buy_token}') 
+                                        data = {
+                                                        "quantity": 1,
+                                                        "product": "I",
+                                                        "validity": "DAY",
+                                                        "price": 0,
+                                                        "tag": "string",
+                                                        "instrument_token": self.buy_token,
+                                                        "order_type": "MARKET",
+                                                        "transaction_type": "BUY",
+                                                        "disclosed_quantity": 0,
+                                                        "trigger_price": 0,
+                                                        "is_amo": False  
+                                                    }
+                                        print(data)
+                                    
+                                        await self.send(text_data=json.dumps({
+                                                'message': 'selling block',
+                                                'ltp': current_ltp,
+                                                'locked_LTP': self.locked_ltp
+                                            }))
+
+                                        if self.toggle and pnl_percent < self.expected_profit_percent: 
+                                            self.previous_ltp = None
+                                            self.ltp_at_order = None
+                                            self.locked_ltp = None
+                                            self.step_size = None
+                                            self.buy_token = self.reverse_token
+                                            
+                                            if not self.ltp_at_order:
+                                            
+                                                ltp_response = requests.get(
+                                                        "https://api.upstox.com/v2/market-quote/ltp",
+                                                        headers={"Authorization": f"Bearer {access_token}"},
+                                                        params={"symbol":self.buy_token}
+                                                                                    )
+                                                if ltp_response.status_code == 200:
+                                                    ltp_data = ltp_response.json()
+                                                    key = list(ltp_data['data'].keys())[0]
+                                                    rest_ltp = ltp_data['data'][key].get('last_price')
+                                            self.ltp_at_order = rest_ltp
+                                         
+                                            print("Executing reverse trade with token:", self.reverse_token)
+                                        
+                                            data = {
+                                                        "quantity": 1,
+                                                        "product": "I",
+                                                        "validity": "DAY",
+                                                        "price": 0,
+                                                        "tag": "string",
+                                                        "instrument_token": self.reverse_token,
+                                                        "order_type": "SELL",
+                                                        "transaction_type": "BUY",
+                                                        "disclosed_quantity": 0,
+                                                        "trigger_price": 0,
+                                                        "is_amo": False  
+                                                    }
+                                            print(data)
+                                            
+                                            self.toggle = False 
+                                            
+                                            
+                           
+                                            await self.send(text_data=json.dumps({
+                                                        'info': 'Profit less than expected. Consider reverse trade.'
+                                            }))
+                                            
+                                            self.reset_trade_flags()
+                                    
+                                    self.previous_ltp = current_ltp
+                                except Exception as e:
+                                        await self.send(text_data=json.dumps({'error': f'Trailing SL error: {str(e)}'}))
+            
+                            await self.send(text_data=json.dumps(result))
+                            now = time.time()
+                            if last_sent_time:
+                                time_diff = now - last_sent_time
+                                
+                            last_sent_time = now
+
         except Exception as e:
             await self.send(text_data=json.dumps({'error': f'WebSocket error: {str(e)}'}))
-
-                            
