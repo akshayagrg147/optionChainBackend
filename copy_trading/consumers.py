@@ -235,13 +235,21 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                         decoded = pb.FeedResponse()
                         decoded.ParseFromString(message)
                         data_dict = MessageToDict(decoded)
-                        print(data_dict)
+                        
                         
                     except Exception as e:
                         await self.send(text_data=json.dumps({'error': f'Decode error: {str(e)}'}))
                         continue
                     
-                    
+                    try:
+                        if 'feeds' in data_dict:
+                            for instrument_key, feed_data in data_dict['feeds'].items():
+                                if instrument_key == 'NSE_INDEX|Nifty 50':
+                                    spot = feed_data['fullFeed']['indexFF']['ltpc']['ltp']
+                                    
+                                    
+                    except Exception as e:
+                        print(f"Error while extracting LTP: {e}")
 
                     feeds = data_dict.get("feeds", {})
                     for ik, details in feeds.items():
@@ -296,7 +304,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                 'strike': info['strike'],
                                 'ltp': rest_ltp,
                                 'latency_ms': latency,
-                                'spot_price': self.latest_spot_price,  
+                                'spot_price': spot,  
                                 'timestamp': time.strftime('%H:%M:%S')
                             }
                             
