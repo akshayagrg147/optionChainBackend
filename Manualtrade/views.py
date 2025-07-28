@@ -90,7 +90,7 @@ class PlaceUpstoxBuyOrderAPIView(APIView):
         order_data = {
             "quantity": quantity,
             "instrument_token": instrument_token,
-            "product": "D",
+            "product": "I",
             "validity": "DAY",
             "price": 0,
             "tag": "BackendInitiatedOrder",
@@ -102,34 +102,64 @@ class PlaceUpstoxBuyOrderAPIView(APIView):
             "slice": True
         }
 
-        # url = "https://api-sandbox.upstox.com/v3/order/place"
-        # headers = {
-        #     'Content-Type': 'application/json',
-        #     'Authorization': f'Bearer {access_token}'
-        # }
+        url = "https://api-sandbox.upstox.com/v3/order/place"
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {access_token}'
+        }
 
-        # try:
-        #     response = requests.post(url, headers=headers, data=json.dumps(order_data))
-        #     response_data = response.json()
+        try:
+            response = requests.post(url, headers=headers, data=json.dumps(order_data))
+            order_response = response.json()
+            
+            buy_order_successful = True
+            
+            
+            if order_response.get("status") == "success":
+                order_id = order_response["data"]["order_ids"][0]
+                
+                
+                details_url = f"https://api-sandbox.upstox.com/v2/order/details?order_id={order_id}"
 
-        #     # ✅ Log to file
-        logger.info(f"SUCCESS | Qty: {quantity} | Token: {instrument_token} | Order: {order_data}")
-        buy_order_successful = True
+                detail_headers = {
+                    'Accept': 'application/json',
+                    'Authorization': f'Bearer {access_token}'
+                }
 
-        #     return Response(response_data, status=response.status_code)
+                detail_resp = requests.get(details_url, headers=detail_headers)
+                detail_data = detail_resp.json()
+               
 
-        # except requests.exceptions.RequestException as e:
-        #     # ✅ Log to file on error
-        #     logger.error(f"FAILED | Qty: {quantity} | Token: {instrument_token} | Error: {str(e)}")
-        #     return Response({
-        #         "success": False,
-        #         "error": str(e)
-        #     }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
-        return Response({
-            "success": True,
-            "msg":"OrderPlaced Successfully"
-        },status=200)
+                if detail_data.get("status") == "success":
+                    price = detail_data["data"].get("price")
+                    
+                    
+                    logger.info(f"ORDER SUCCESS | Qty: {quantity} | Token: {instrument_token} | Order ID: {order_id} | LTP : {price}")
+
+                    return Response({
+                        "success": True,
+                        "message": f"Order placed successfully at price ₹{price}",
+                        "order_id": order_id,
+                        "price": price
+                    }, status=200)
+                else:
+                    return Response({
+                        "success": False,
+                        "message": "Order placed, but failed to fetch order details.",
+                        "order_id": order_id
+                    }, status=200)
+
+            else:
+                return Response(order_response, status=response.status_code)
+
+        except requests.exceptions.RequestException as e:
+            return Response({
+                "success": False,
+                "error": str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+
+   
 
         
 class PlaceUpstoxSellOrderAPIView(APIView):
@@ -154,7 +184,7 @@ class PlaceUpstoxSellOrderAPIView(APIView):
         order_data = {
             "quantity": quantity,
             "instrument_token": instrument_token,
-            "product": "D",
+            "product": "I",
             "validity": "DAY",
             "price": 0,
             "tag": "BackendSellOrder",
@@ -166,22 +196,54 @@ class PlaceUpstoxSellOrderAPIView(APIView):
             "slice": True
         }
 
-        # url = "https://api-sandbox.upstox.com/v3/order/place"
-        # headers = {
-        #     'Content-Type': 'application/json',
-        #     'Authorization': f'Bearer {access_token}'
-        # }
+        url = "https://api-sandbox.upstox.com/v3/order/place"
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {access_token}'
+        }
 
-        # try:
-        #     response = requests.post(url, headers=headers, data=json.dumps(order_data))
-        #     response_data = response.json()
-        loggers.info(f"SUCCESS | SELL | Qty: {quantity} | Token: {instrument_token} | Response: {order_data}")
-        #     return Response(response_data, status=response.status_code)
-        # except requests.exceptions.RequestException as e:
-        #     logger.error(f"FAILED | SELL | Qty: {quantity} | Token: {instrument_token} | Error: {str(e)}")
-        #     return Response({"success": False, "error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
-        return Response({
-            "success": True,
-            "msg":"OrderSell Successfully"
-        },status=200)
+        try:
+            response = requests.post(url, headers=headers, data=json.dumps(order_data))
+            response_data = response.json()
+
+            if response_data.get("status") == "success":
+                order_id = response_data["data"]["order_ids"][0]
+
+                details_url = f"https://api-sandbox.upstox.com/v2/order/details?order_id={order_id}"
+                detail_headers = {
+                    'Accept': 'application/json',
+                    'Authorization': f'Bearer {access_token}'
+                }
+
+                detail_resp = requests.get(details_url, headers=detail_headers)
+                detail_data = detail_resp.json()
+                
+                if detail_data.get("status") == "success":
+                    price = detail_data["data"].get("price")
+
+                    
+                    loggers.info(f"ORDER SELL SUCCESS | Qty: {quantity} | Token: {instrument_token} | Order ID: {order_id} | LTP: ₹{price}")
+
+                    return Response({
+                        "success": True,
+                        "message": f"Sell order placed successfully at price ₹{price}",
+                        "order_id": order_id,
+                        "price": price
+                    }, status=200)
+                else:
+                    logger.warning(f"SELL ORDER DETAIL FETCH FAILED | Order ID: {order_id} | Response: {detail_data}")
+
+                    return Response({
+                        "success": True,
+                        "message": "Sell order placed, but failed to fetch order details.",
+                        "order_id": order_id
+                    }, status=200)
+            else:
+                logger.error(f"SELL ORDER FAILED | Qty: {quantity} | Token: {instrument_token} | Response: {response_data}")
+                return Response(response_data, status=response.status_code)
+
+        except requests.exceptions.RequestException as e:
+            logger.exception(f"SELL ORDER REQUEST EXCEPTION | Qty: {quantity} | Token: {instrument_token} | Error: {str(e)}")
+            return Response({"success": False, "error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+   

@@ -183,7 +183,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
         ssl_context.check_hostname = False
         ssl_context.verify_mode = ssl.CERT_NONE
         
-        file_path = os.path.join(settings.BASE_DIR,'nse.csv')
+        file_path = os.path.join(settings.BASE_DIR,'nse1.csv')
         a =  trading_symbol
         instrument_token = self.get_instrument_keys_by_trading_symbol(file_path, a)
 
