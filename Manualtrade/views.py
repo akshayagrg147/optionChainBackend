@@ -9,8 +9,8 @@ from rest_framework import status
 
 import json
 import requests
-from .logger import buy_logger as logger
-from .logger import sell_logger as loggers
+from .logger import write_log_to_txt
+from datetime import datetime
 
 
 buy_order_successful = False
@@ -75,11 +75,29 @@ class GetTradingSymbolsAndToken(APIView):
             return Response({"error": f"Unexpected error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class PlaceUpstoxBuyOrderAPIView(APIView):
+    def fetch_upstox_user_name(self, access_token):
+        try:
+            headers = {
+                "Authorization": f"Bearer {access_token}"
+            }
+            response = requests.get("https://api.upstox.com/v2/user/profile", headers=headers)
+            if response.status_code == 200:
+                data = response.json()
+                return data['data']['user_name']
+            else:
+                write_log_to_txt(f"❌ Error fetching user name: {response.status_code} {response.text}")
+                return "Unknown User"
+        except Exception as e:
+            write_log_to_txt(f"❌ Exception while fetching user name: {str(e)}")
+            return "Unknown User"
+    
     def post(self, request):
         global buy_order_successful
         quantity = request.data.get("quantity")
         instrument_token = request.data.get("instrument_token")
         access_token = request.data.get("access_token")
+        
+        user_name = self.fetch_upstox_user_name(access_token)
 
         if not quantity or not instrument_token or not access_token:
             return Response({
@@ -133,9 +151,10 @@ class PlaceUpstoxBuyOrderAPIView(APIView):
                 if detail_data.get("status") == "success":
                     price = detail_data["data"].get("price")
                     
+                    write_log_to_txt(
+                        f" BUY order User:{user_name} , Quantity: {quantity}, Token: {instrument_token}, Price: ₹{price}"
+                    )
                     
-                    logger.info(f"ORDER SUCCESS | Qty: {quantity} | Token: {instrument_token} | Order ID: {order_id} | LTP : {price}")
-
                     return Response({
                         "success": True,
                         "message": f"Order placed successfully at price ₹{price}",
@@ -159,15 +178,30 @@ class PlaceUpstoxBuyOrderAPIView(APIView):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             
 
-   
-
-        
 class PlaceUpstoxSellOrderAPIView(APIView):
+    def fetch_upstox_user_name(self, access_token):
+        try:
+            headers = {
+                "Authorization": f"Bearer {access_token}"
+            }
+            response = requests.get("https://api.upstox.com/v2/user/profile", headers=headers)
+            if response.status_code == 200:
+                data = response.json()
+                return data['data']['user_name']
+            else:
+                print(f"❌ Error fetching user name: {response.status_code} {response.text}")
+                return "Unknown User"
+        except Exception as e:
+            print(f"❌ Exception while fetching user name: {str(e)}")
+            return "Unknown User"
     def post(self, request):
         global buy_order_successful
         quantity = request.data.get("quantity")
         instrument_token = request.data.get("instrument_token")
         access_token = request.data.get("access_token")
+        
+        user_name = self.fetch_upstox_user_name(access_token)
+
 
         if not quantity or not instrument_token or not access_token:
             return Response({
@@ -214,15 +248,15 @@ class PlaceUpstoxSellOrderAPIView(APIView):
                     'Accept': 'application/json',
                     'Authorization': f'Bearer {access_token}'
                 }
+                user_name = self.fetch_upstox_user_name(access_token)
 
                 detail_resp = requests.get(details_url, headers=detail_headers)
                 detail_data = detail_resp.json()
                 
                 if detail_data.get("status") == "success":
                     price = detail_data["data"].get("price")
-
-                    
-                    loggers.info(f"ORDER SELL SUCCESS | Qty: {quantity} | Token: {instrument_token} | Order ID: {order_id} | LTP: ₹{price}")
+     
+                    write_log_to_txt(f"✅ SELL ORDER PLACED | User: {user_name} | Qty: {quantity} | Token: {instrument_token} | Price: ₹{price} | Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
                     return Response({
                         "success": True,
@@ -231,7 +265,7 @@ class PlaceUpstoxSellOrderAPIView(APIView):
                         "price": price
                     }, status=200)
                 else:
-                    logger.warning(f"SELL ORDER DETAIL FETCH FAILED | Order ID: {order_id} | Response: {detail_data}")
+                    write_log_to_txt(f"SELL ORDER DETAIL FETCH FAILED | Order ID: {order_id} | Response: {detail_data}")
 
                     return Response({
                         "success": True,
@@ -239,11 +273,11 @@ class PlaceUpstoxSellOrderAPIView(APIView):
                         "order_id": order_id
                     }, status=200)
             else:
-                logger.error(f"SELL ORDER FAILED | Qty: {quantity} | Token: {instrument_token} | Response: {response_data}")
+                write_log_to_txt(f"SELL ORDER FAILED | Qty: {quantity} | Token: {instrument_token} | Response: {response_data}")
                 return Response(response_data, status=response.status_code)
 
         except requests.exceptions.RequestException as e:
-            logger.exception(f"SELL ORDER REQUEST EXCEPTION | Qty: {quantity} | Token: {instrument_token} | Error: {str(e)}")
+            write_log_to_txt(f"SELL ORDER REQUEST EXCEPTION | Qty: {quantity} | Token: {instrument_token} | Error: {str(e)}")
             return Response({"success": False, "error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-   
+    

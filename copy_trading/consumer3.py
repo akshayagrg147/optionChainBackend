@@ -89,34 +89,18 @@ class LiveOptionDataConsumer3(AsyncWebsocketConsumer):
         expiry_date = payload.get('expiry_date')
         access_token = payload.get('access_token')
         trading_symbol = payload.get('trading_symbol')
-
+        trading_symbol_2 = payload.get('trading_symbol_2')
+       
         
         if not instrument_key or not expiry_date or not access_token:
             await self.send(text_data=json.dumps({'error': 'Missing required fields'}))
-            return 
-        asyncio.create_task(self.fetch_and_stream_data(instrument_key, expiry_date, access_token, trading_symbol))
-        asyncio.create_task(self.fetch_spot_price_forever(access_token, instrument_key))
+            return
+       
+        asyncio.create_task(self.fetch_and_stream_data(instrument_key, expiry_date, access_token, trading_symbol,trading_symbol_2))
+   
+    
 
-    async def fetch_spot_price_forever(self, access_token, instrument_key):
-        headers = {"Authorization": f"Bearer {access_token}"}
-        url = "https://api.upstox.com/v2/market-quote/ltp"
-
-        while self.keep_running:
-            try:
-                response = requests.get(url, headers=headers, params={"symbol": instrument_key})
-               
-                if response.status_code == 200:
-                    data = response.json()
-                    actual_key = list(data['data'].keys())[0]
-                    ltp = data['data'][actual_key].get('last_price')
-                    self.latest_spot_price = ltp  
-                    
-            except Exception as e:
-                await self.send(text_data=json.dumps({'error': f'Spot fetch error: {str(e)}'}))
-
-            await asyncio.sleep(1)
-
-    async def fetch_and_stream_data(self, instrument_key, expiry_date, access_token, trading_symbol):
+    async def fetch_and_stream_data(self, instrument_key, expiry_date, access_token, trading_symbol,trading_symbol_2):
         option_chain_url = "https://api.upstox.com/v2/option/chain"
            
         headers = {
@@ -150,7 +134,9 @@ class LiveOptionDataConsumer3(AsyncWebsocketConsumer):
                 instrument_keys.append(ik)
                 instrument_type_map[ik] = {'type': 'PE', 'strike': item.get('strike_price')}
 
-    
+        if instrument_key:
+            instrument_keys.append(instrument_key)
+            instrument_type_map[instrument_key] = {'type': 'SPOT', 'strike': 'NIFTY'}
 
         if not instrument_keys:
             await self.send(text_data=json.dumps({'error': 'No instruments found.'}))
@@ -174,7 +160,12 @@ class LiveOptionDataConsumer3(AsyncWebsocketConsumer):
         instrument_token = self.get_instrument_keys_by_trading_symbol(file_path, a)
 
         ce_token = instrument_token.get("CE")
-        pe_token = instrument_token.get("PE")
+        ce_reverse_token = instrument_token.get("PE")
+        
+
+        print("🎯 CE Token:", ce_token)
+        print("🎯 CE REVERSE Token:", ce_reverse_token)
+        
         last_update_time = time.time()
 
         try:
@@ -186,7 +177,7 @@ class LiveOptionDataConsumer3(AsyncWebsocketConsumer):
                     "method": "sub",
                     "data": {
                         "mode": "full",
-                        "instrumentKeys": [ce_token,pe_token,instrument_key]
+                        "instrumentKeys": [ce_token,ce_reverse_token,instrument_key]
                     }
                 }
                 await ws.send(json.dumps(sub_msg).encode("utf-8"))
@@ -212,16 +203,27 @@ class LiveOptionDataConsumer3(AsyncWebsocketConsumer):
                         decoded.ParseFromString(message)
                         data_dict = MessageToDict(decoded)
                         
+                        
                     except Exception as e:
                         await self.send(text_data=json.dumps({'error': f'Decode error: {str(e)}'}))
                         continue
                     
-                    
                     try:
                         if 'feeds' in data_dict:
-                            for instrument_key, feed_data in data_dict['feeds'].items():
-                                if instrument_key == 'NSE_INDEX|Nifty 50':
-                                    spot = feed_data['fullFeed']['indexFF']['ltpc']['ltp']
+                            feed_data = data_dict['feeds'].get(instrument_key)
+
+                            if feed_data:
+                                try:
+                                    ltp_data = feed_data['fullFeed']
+
+                                    if 'indexFF' in ltp_data:
+                                        spot = ltp_data['indexFF']['ltpc']['ltp']
+                                        print(spot)
+                                except Exception as e:
+                                    print(f"❌ Error fetching LTP for {instrument_key}: {e}")
+                
+                    except Exception as e:
+                        print(f"Error while extracting LTP: {e}")
                                     
                                     
                     except Exception as e:
@@ -234,13 +236,11 @@ class LiveOptionDataConsumer3(AsyncWebsocketConsumer):
                         ws_ltp = ltp_info.get("ltp")
                         ltt = ltp_info.get("ltt")
                         
-                        
-                    
-                        
 
                         if not ws_ltp or not ltt:
                             continue
-                        
+
+
                         rest_ltp = ws_ltp
                        
                         info = instrument_type_map.get(ik)
@@ -251,10 +251,15 @@ class LiveOptionDataConsumer3(AsyncWebsocketConsumer):
                                 'type': info['type'],
                                 'strike': info['strike'],
                                 'ltp': rest_ltp,
-                                'spot_price':spot,  
+                                'spot_price': spot,  
                                 'timestamp': time.strftime('%H:%M:%S')
                             }
                             await self.send(text_data=json.dumps(result))
-                            
+                            now = time.time()
+                            if last_sent_time:
+                                time_diff = now - last_sent_time
+                                
+                            last_sent_time = now
+
         except Exception as e:
             await self.send(text_data=json.dumps({'error': f'WebSocket error: {str(e)}'}))

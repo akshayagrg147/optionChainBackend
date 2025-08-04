@@ -411,3 +411,33 @@ class GetTradingSymbolsCSV(APIView):
             return Response({"error": "CSV file not found"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         except Exception as e:
             return Response({"error": f"Unexpected error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        
+        
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.parsers import MultiPartParser
+from rest_framework import status
+import os
+from django.conf import settings
+
+class UploadCSVView(APIView):
+    parser_classes = [MultiPartParser]
+
+    def post(self, request, format=None):
+        uploaded_file = request.FILES.get('file')
+        if not uploaded_file:
+            return Response({'error': 'No file provided'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Always save with the name 'nse.csv'
+        save_path = os.path.join(settings.BASE_DIR, 'nse.csv')
+
+        try:
+            with open(save_path, 'wb+') as destination:
+                for chunk in uploaded_file.chunks():
+                    destination.write(chunk)
+
+            return Response({'message': 'File uploaded and saved as nse.csv'}, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
