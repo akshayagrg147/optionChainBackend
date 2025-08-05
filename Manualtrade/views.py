@@ -156,7 +156,7 @@ class PlaceUpstoxBuyOrderAPIView(APIView):
                     buy_order_price = float(price)
                     
                     write_log_to_txt(
-                        f" ✅ SELL ORDER PLACED |  User:{user_name} , Quantity: {quantity}, | Token: {instrument_token}, BUY IN LTP: {price}, Total Amount: {total_amount} , Investable Amount: {investable_amount} | Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                        f" ✅ BUY ORDER PLACED |  User:{user_name} , Quantity: {quantity}, | Token: {instrument_token}, BUY IN LTP: {price}, Total Amount: {total_amount} , Investable Amount: {investable_amount} | Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
                     )
                     
                     return Response({
