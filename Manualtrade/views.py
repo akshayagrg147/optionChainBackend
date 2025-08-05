@@ -14,6 +14,7 @@ from datetime import datetime
 
 
 buy_order_successful = False
+buy_order_price = 0.0
 
 
 class GetTradingSymbolsAndToken(APIView):
@@ -92,7 +93,7 @@ class PlaceUpstoxBuyOrderAPIView(APIView):
             return "Unknown User"
     
     def post(self, request):
-        global buy_order_successful
+        global buy_order_successful, buy_order_price
         quantity = request.data.get("quantity")
         instrument_token = request.data.get("instrument_token")
         access_token = request.data.get("access_token")
@@ -111,7 +112,7 @@ class PlaceUpstoxBuyOrderAPIView(APIView):
             "product": "I",
             "validity": "DAY",
             "price": 0,
-            "tag": "BackendInitiatedOrder",
+            "tag": "string",
             "order_type": "MARKET",
             "transaction_type": "BUY",
             "disclosed_quantity": 0,
@@ -150,6 +151,7 @@ class PlaceUpstoxBuyOrderAPIView(APIView):
 
                 if detail_data.get("status") == "success":
                     price = detail_data["data"].get("price")
+                    buy_order_price = float(price)
                     
                     write_log_to_txt(
                         f" BUY order User:{user_name} , Quantity: {quantity}, Token: {instrument_token}, Price: ₹{price}"
@@ -195,7 +197,7 @@ class PlaceUpstoxSellOrderAPIView(APIView):
             print(f"❌ Exception while fetching user name: {str(e)}")
             return "Unknown User"
     def post(self, request):
-        global buy_order_successful
+        global buy_order_successful, buy_order_price
         quantity = request.data.get("quantity")
         instrument_token = request.data.get("instrument_token")
         access_token = request.data.get("access_token")
@@ -221,7 +223,7 @@ class PlaceUpstoxSellOrderAPIView(APIView):
             "product": "I",
             "validity": "DAY",
             "price": 0,
-            "tag": "BackendSellOrder",
+            "tag": "string",
             "order_type": "MARKET",
             "transaction_type": "SELL",  
             "disclosed_quantity": 0,
@@ -255,8 +257,14 @@ class PlaceUpstoxSellOrderAPIView(APIView):
                 
                 if detail_data.get("status") == "success":
                     price = detail_data["data"].get("price")
+                    sell_price = float(price)
+                    if buy_order_price and buy_order_price != 0:
+                        pnl_percent = ((sell_price - buy_order_price) / buy_order_price) * 100
+                        pnl_percent = round(pnl_percent, 2)
+                    else:
+                        pnl_percent = 0.0
      
-                    write_log_to_txt(f"✅ SELL ORDER PLACED | User: {user_name} | Qty: {quantity} | Token: {instrument_token} | Price: ₹{price} | Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                    write_log_to_txt(f"✅ SELL ORDER PLACED | User: {user_name} | Qty: {quantity} | Token: {instrument_token} | BUY IN LTP: ₹{price} |PnL: {pnl_percent}% |  Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
                     return Response({
                         "success": True,

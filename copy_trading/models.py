@@ -47,6 +47,7 @@ class FundInstrument(models.Model):
     call_lot = models.PositiveIntegerField(default=0)
     put_lot = models.PositiveIntegerField(default=0)
     token = models.CharField(max_length=500, unique=True, null=True, blank=True)
+    sandbox_token = models.CharField(max_length=500, unique=True, null=True, blank=True)
 
     def __str__(self):
         return f"{self.name} - {self.funds}"
