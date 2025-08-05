@@ -1,0 +1,6 @@
+2025-08-05 14:03:55 - ❌ Error fetching user name: 401 {"status":"error","errors":[{"errorCode":"UDAPI100050","message":"Invalid token used to access API","propertyPath":null,"invalidValue":null,"error_code":"UDAPI100050","property_path":null,"invalid_value":null}]}
+2025-08-05 14:03:58 -  BUY order User:Unknown User , Quantity: 1, | Token: MCX_FO|458028, BUY IN LTP: 0.0, Total Amount 10000 , Investable Amount 100 | Time: 2025-08-05 14:03:58
+2025-08-05 14:04:24 - ✅ SELL ORDER PLACED | User: Unknown User | Qty: 1 | Token: MCX_FO|458028 | SELL IN LTP: ₹0.0 |PnL: 0.0% | Total Amount 10000 | Investable Amount 100| Time: 2025-08-05 14:04:24
+2025-08-05 14:05:35 - ❌ Error fetching user name: 401 {"status":"error","errors":[{"errorCode":"UDAPI100050","message":"Invalid token used to access API","propertyPath":null,"invalidValue":null,"error_code":"UDAPI100050","property_path":null,"invalid_value":null}]}
+2025-08-05 14:05:37 -  ✅ SELL ORDER PLACED |  User:Unknown User , Quantity: 1, | Token: MCX_FO|458028, BUY IN LTP: 0.0, Total Amount 10000 , Investable Amount 100 | Time: 2025-08-05 14:05:37
+2025-08-05 14:05:43 - ✅ SELL ORDER PLACED | User: Unknown User | Qty: 1 | Token: MCX_FO|458028 | SELL IN LTP: ₹0.0 |PnL: 0.0% | Total Amount 10000 | Investable Amount 100| Time: 2025-08-05 14:05:43

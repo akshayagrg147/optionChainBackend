@@ -97,6 +97,8 @@ class PlaceUpstoxBuyOrderAPIView(APIView):
         quantity = request.data.get("quantity")
         instrument_token = request.data.get("instrument_token")
         access_token = request.data.get("access_token")
+        total_amount = request.data.get("total_amount")
+        investable_amount = request.data.get('investable_amount')
         
         user_name = self.fetch_upstox_user_name(access_token)
 
@@ -154,7 +156,7 @@ class PlaceUpstoxBuyOrderAPIView(APIView):
                     buy_order_price = float(price)
                     
                     write_log_to_txt(
-                        f" BUY order User:{user_name} , Quantity: {quantity}, Token: {instrument_token}, Price: ₹{price}"
+                        f" ✅ BUY ORDER PLACED |  User:{user_name} , Quantity: {quantity}, | Token: {instrument_token}, BUY IN LTP: {price}, Total Amount: {total_amount} , Investable Amount: {investable_amount} | Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
                     )
                     
                     return Response({
@@ -201,6 +203,8 @@ class PlaceUpstoxSellOrderAPIView(APIView):
         quantity = request.data.get("quantity")
         instrument_token = request.data.get("instrument_token")
         access_token = request.data.get("access_token")
+        total_amount = request.data.get("total_amount")
+        investable_amount = request.data.get('investable_amount')
         
         user_name = self.fetch_upstox_user_name(access_token)
 
@@ -264,7 +268,7 @@ class PlaceUpstoxSellOrderAPIView(APIView):
                     else:
                         pnl_percent = 0.0
      
-                    write_log_to_txt(f"✅ SELL ORDER PLACED | User: {user_name} | Qty: {quantity} | Token: {instrument_token} | BUY IN LTP: ₹{price} |PnL: {pnl_percent}% |  Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                    write_log_to_txt(f"✅ SELL ORDER PLACED | User: {user_name} | Qty: {quantity} | Token: {instrument_token} | SELL IN LTP: ₹{price} |PnL: {pnl_percent}% | Total Amount: {total_amount} | Investable Amount: {investable_amount}| Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
                     return Response({
                         "success": True,
