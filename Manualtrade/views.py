@@ -258,8 +258,11 @@ class PlaceUpstoxSellOrderAPIView(APIView):
                 if detail_data.get("status") == "success":
                     price = detail_data["data"].get("price")
                     sell_price = float(price)
-                    pnl_percent = ((sell_price - buy_order_price) / buy_order_price) * 100
-                    pnl_percent = round(pnl_percent, 2)
+                    if buy_order_price and buy_order_price != 0:
+                        pnl_percent = ((sell_price - buy_order_price) / buy_order_price) * 100
+                        pnl_percent = round(pnl_percent, 2)
+                    else:
+                        pnl_percent = 0.0
      
                     write_log_to_txt(f"✅ SELL ORDER PLACED | User: {user_name} | Qty: {quantity} | Token: {instrument_token} | BUY IN LTP: ₹{price} |PnL: {pnl_percent}% |  Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
