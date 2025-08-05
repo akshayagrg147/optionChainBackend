@@ -143,6 +143,7 @@ class UpstoxMarginAPIView(APIView):
             }, status=profile_response.status_code)
 
         user_data = profile_response.json().get("data", {})
+       
         user_name = user_data.get("user_name", "Unknown User")
 
        
@@ -150,19 +151,18 @@ class UpstoxMarginAPIView(APIView):
         margin_response = requests.get(margin_url, headers=headers)
 
         if margin_response.status_code == 200:
+            
             margin_data = margin_response.json()
+            print(margin_data)
             equity = margin_data.get("data", {}).get("equity", {})
-            
-            available_margin = equity.get("availableMargin", 0.00)
-            
        
             return Response({
                 "success": True,
                 "user_name": user_name,
                 "margins": {
-                    "available_margin": equity.get("availableMargin"),
-                    "used_margin": equity.get("usedMargin"),
-                    "net_margin": equity.get("net")
+                   "available_margin": equity.get("available_margin"),
+                    "used_margin": equity.get("used_margin"),
+                    
                 }
             })
 
