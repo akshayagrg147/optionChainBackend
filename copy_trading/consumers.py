@@ -104,6 +104,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
         self.rever_trade = None
         self.toggle = True
         self.buy_token = None
+        
 
     async def disconnect(self, close_code):
         self.keep_running = False
@@ -125,8 +126,11 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
         expected_profit_percent = payload.get('profit_percent')
         self.step = step
         self.expected_profit_percent = expected_profit_percent
+        total_amount = payload.get("total_amount")
+        investable_amount = payload.get("investable_amount") 
+        lot = payload.get("lot")
         
-        if not instrument_key or not expiry_date or not access_token or not target_market_priceCE or not target_market_pricePE or not step or not quantity:
+        if not instrument_key or not expiry_date or not access_token or not target_market_priceCE or not target_market_pricePE or not step or not quantity or not total_amount or not investable_amount or not lot:
             await self.send(text_data=json.dumps({'error': 'Missing required fields'}))
             return
         try:
@@ -135,12 +139,12 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
         except ValueError:
             await self.send(text_data=json.dumps({'error': 'Invalid target_market_price'}))
             return  
-        asyncio.create_task(self.fetch_and_stream_data(instrument_key, expiry_date, access_token, trading_symbol,trading_symbol_2,quantity))
+        asyncio.create_task(self.fetch_and_stream_data(instrument_key, expiry_date, access_token, trading_symbol,trading_symbol_2,quantity,total_amount,investable_amount,lot))
       
 
 
 
-    async def fetch_and_stream_data(self, instrument_key, expiry_date, access_token, trading_symbol,trading_symbol_2,quantity):
+    async def fetch_and_stream_data(self, instrument_key, expiry_date, access_token, trading_symbol,trading_symbol_2,quantity,total_amount,investable_amounnt,lot):
         option_chain_url = "https://api.upstox.com/v2/option/chain"
            
         headers = {
@@ -231,9 +235,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
 
                 while self.keep_running:
                     try:
-                        message = await asyncio.wait_for(ws.recv(), timeout=30)
-                       
-                     
+                        message = await asyncio.wait_for(ws.recv(), timeout=300)
                         last_update_time = time.time()
                     except asyncio.TimeoutError:
                         if time.time() - last_update_time > 60:
@@ -347,10 +349,16 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                         self.order_placedPE  = True
                                         self.buy_token = ce_token
                                         self.reverse_token = ce_reverse_token
+                                        
+                                                
+                                                
+                                        
+                                        
+                                        
                                         order_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                                         print('BUY TOKEN ',ce_token)
                                         data = {
-                                                        "quantity": 1,
+                                                        "quantity": quantity,
                                                         "product": "D",
                                                         "validity": "DAY",
                                                         "price": 0,
@@ -404,6 +412,8 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                                 'Token_BUy': self.buy_token,
                                                                 'Market Value': self.latest_spot_price,
                                                                 'LTP': self.ltp_at_order,
+                                                                "Total Amount" : total_amount,
+                                                                "Investable Amount": investable_amounnt,
                                                                 'Order Time': order_timestamp
                                                             }
                                                         )
@@ -426,10 +436,13 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                             self.order_placedCE  = True
                                             self.buy_token = pe_token
                                             self.reverse_token = pe_reverse_token
+                                            
+                                                
+                                            
                                             order_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                                             print('BUY TOKEN ',pe_token)
                                             data = {
-                                                        "quantity": 1,
+                                                        "quantity": quantity,
                                                         "product": "D",
                                                         "validity": "DAY",
                                                         "price": 0,
@@ -478,6 +491,8 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                                 'Token_BUy': self.buy_token,
                                                                 'Market Value': self.latest_spot_price,
                                                                 'LTP': self.ltp_at_order,
+                                                                "Total Amount" : total_amount,
+                                                                "Investable Amount": investable_amounnt,
                                                                 'Order Time': order_timestamp
                                                             }
                                                         )
@@ -516,7 +531,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                         self.sell_order_placed = True
                                         print(f'Selling the token : {self.buy_token}') 
                                         data = {
-                                                        "quantity": 1,
+                                                        "quantity": quantity,
                                                         "product": "I",
                                                         "validity": "DAY",
                                                         "price": 0,
@@ -588,11 +603,22 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                     key = list(ltp_data['data'].keys())[0]
                                                     rest_ltp = ltp_data['data'][key].get('last_price')
                                             self.ltp_at_order = rest_ltp
-                                         
+                                            
+                                            
+                                            if pnl_percent > 0 :
+                                                 new_investable = investable_amounnt + (pnl_percent / 100) * investable_amounnt
+                                            else:
+                                                new_investable = investable_amounnt - (abs(pnl_percent) / 100) * investable_amounnt
+                                            
+                                           
+                                            self.rq = lot * (new_investable // (self.ltp_at_order * lot))
+                                            print(self.rq)
+                                            
+
                                             print("Executing reverse trade with token:", self.reverse_token)
                                         
                                             data = {
-                                                        "quantity": 1,
+                                                        "quantity": self.rq,
                                                         "product": "I",
                                                         "validity": "DAY",
                                                         "price": 0,

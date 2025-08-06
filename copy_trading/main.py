@@ -12,11 +12,39 @@ import csv
 from django.conf import settings
 import time
 from datetime import datetime
+from .setup_log import log_order_event
 class LiveOptionDataConsumer(AsyncWebsocketConsumer): 
     def reset_trade_flags(self):
         self.sell_order_placed = False
         self.locked_ltp = None
         self.previous_ltp = None
+        
+        
+        
+    def log_order_event(account_name: str, title: str, data: dict):
+        log_block = [f"\n{'='*20} {account_name.upper()} | {title} {'='*20}"]
+        for key, value in data.items():
+            log_block.append(f"{key}: {value}")
+        log_block.append('-' * 60)
+        logger.info('\n'.join(log_block))
+        
+        
+    def fetch_upstox_user_name(self, access_token):
+        try:
+            headers = {
+                "Authorization": f"Bearer {access_token}"
+            }
+            response = requests.get("https://api.upstox.com/v2/user/profile", headers=headers)
+            if response.status_code == 200:
+                data = response.json()
+                
+                return data['data']['user_name']
+            else:
+                print(f"❌ Error fetching user name: {response.status_code} {response.text}")
+                return "Unknown User"
+        except Exception as e:
+            print(f"❌ Exception while fetching user name: {str(e)}")
+            return "Unknown User"
     
 
     def get_instrument_keys_by_trading_symbol(self, file_path, trading_symbol_input):
@@ -97,8 +125,10 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
         expected_profit_percent = payload.get('profit_percent')
         self.step = step
         self.expected_profit_percent = expected_profit_percent
+        total_amount = payload.get("total_amount")
+        investable_amount = payload.get("investable_amount")
         
-        if not instrument_key or not expiry_date or not access_token or not target_market_priceCE or not target_market_pricePE or not step or not quantity:
+        if not instrument_key or not expiry_date or not access_token or not target_market_priceCE or not target_market_pricePE or not step or not quantity or not total_amount or not investable_amount:
             await self.send(text_data=json.dumps({'error': 'Missing required fields'}))
             return
         try:
@@ -107,12 +137,12 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
         except ValueError:
             await self.send(text_data=json.dumps({'error': 'Invalid target_market_price'}))
             return  
-        asyncio.create_task(self.fetch_and_stream_data(instrument_key, expiry_date, access_token, trading_symbol,trading_symbol_2,quantity))
+        asyncio.create_task(self.fetch_and_stream_data(instrument_key, expiry_date, access_token, trading_symbol,trading_symbol_2,quantity,total_amount,investable_amount))
       
 
 
 
-    async def fetch_and_stream_data(self, instrument_key, expiry_date, access_token, trading_symbol,trading_symbol_2,quantity):
+    async def fetch_and_stream_data(self, instrument_key, expiry_date, access_token, trading_symbol,trading_symbol_2,quantity,total_amount,investable_amounnt):
         option_chain_url = "https://api.upstox.com/v2/option/chain"
            
         headers = {
@@ -204,8 +234,6 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                 while self.keep_running:
                     try:
                         message = await asyncio.wait_for(ws.recv(), timeout=30)
-                       
-                     
                         last_update_time = time.time()
                     except asyncio.TimeoutError:
                         if time.time() - last_update_time > 60:
@@ -301,6 +329,9 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                 'timestamp': time.strftime('%H:%M:%S')
                             }
                             
+                            
+                            self.account_name = self.fetch_upstox_user_name(access_token)
+                            
                             if ik == ce_token and not self.order_placedCE and self.latest_spot_price is not None:   
                                 try:
                                     #print("inside ce ")
@@ -316,6 +347,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                         self.order_placedPE  = True
                                         self.buy_token = ce_token
                                         self.reverse_token = ce_reverse_token
+                                        order_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                                         print('BUY TOKEN ',ce_token)
                                         data = {
                                                         "quantity": 1,
@@ -353,13 +385,31 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                             #     await self.send(text_data=json.dumps({'error': f'Order failed: {order_response.text}'}))
                                             # self.order_placed = True
                                             
+                            
+                                        
                                         await self.send(text_data=json.dumps({
-                                            'message': 'Order placed successfully...Waiting for square off',
-                                            'market_value':self.latest_spot_price,
-                                            'ltp': self.ltp_at_order,           
-                                            'timestamp': time.strftime('%H:%M:%S')
-
-        }))
+                                                    'message': 'Order placed successfully...Waiting for square off',
+                                                    'Account_name': self.account_name,
+                                                    'Token_BUy': self.buy_token,
+                                                    'market_value': self.latest_spot_price,
+                                                    'ltp': self.ltp_at_order,
+                                                    'order_datetime': order_timestamp
+                                                }))
+                                        
+                                        
+                                        log_order_event(
+                                                            self.account_name,
+                                                            "Buy Order Placed",
+                                                            {
+                                                                'Token_BUy': self.buy_token,
+                                                                'Market Value': self.latest_spot_price,
+                                                                'LTP': self.ltp_at_order,
+                                                                "Total Amount" : total_amount,
+                                                                "Investable Amount": investable_amounnt,
+                                                                'Order Time': order_timestamp
+                                                            }
+                                                        )
+                                        
                                 except Exception as e:
                                     await self.send(text_data=json.dumps({'error': f'Order exception: {str(e)}'}))
                                                                                           
@@ -378,6 +428,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                             self.order_placedCE  = True
                                             self.buy_token = pe_token
                                             self.reverse_token = pe_reverse_token
+                                            order_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                                             print('BUY TOKEN ',pe_token)
                                             data = {
                                                         "quantity": 1,
@@ -413,13 +464,27 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                             # self.order_placed = True
                                             
                                             await self.send(text_data=json.dumps({
-                                            'message': 'Order placed successfully....Waiting for square off',
-                                            'market_value':self.latest_spot_price,
-                                            'ltp': self.ltp_at_order,          
-                                            'timestamp': time.strftime('%H:%M:%S')
-
-                                            }))
-                                      
+                                                    'message': 'Order placed successfully...Waiting for square off',
+                                                    'Account_name': self.account_name,
+                                                    'Token_BUy': self.buy_token,
+                                                    'market_value': self.latest_spot_price,
+                                                    'ltp': self.ltp_at_order,
+                                                    'order_datetime': order_timestamp
+                                                }))
+                                        
+                                        
+                                        log_order_event(
+                                                            self.account_name,
+                                                            "Buy Order Placed",
+                                                            {
+                                                                'Token_BUy': self.buy_token,
+                                                                'Market Value': self.latest_spot_price,
+                                                                'LTP': self.ltp_at_order,
+                                                                "Total Amount" : total_amount,
+                                                                "Investable Amount": investable_amounnt,
+                                                                'Order Time': order_timestamp
+                                                            }
+                                                        )
                                 except Exception as e:
                                     await self.send(text_data=json.dumps({'error': f'Order exception: {str(e)}'}))
                             
@@ -437,7 +502,9 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                             'init_SL': True,    
                                             'locked_LTP': self.locked_ltp,
                                             'step_size': self.step_size
-                                                }))   
+                                                }))  
+                                        
+                                     
                                     print(f"📈 Buy: {self.ltp_at_order} | Locked SL: {self.locked_ltp} | Live LTP: {current_ltp}")
                                     if current_ltp > self.previous_ltp:
                                         while current_ltp >= self.locked_ltp + self.step_size:
@@ -466,12 +533,45 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                         "is_amo": False  
                                                     }
                                         print(data)
-                                    
+                                        ltp_response = requests.get(
+                                                        "https://api.upstox.com/v2/market-quote/ltp",
+                                                        headers={"Authorization": f"Bearer {access_token}"},
+                                                        params={"symbol":self.buy_token}
+                                                                                    )
+                                        order_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                                        if ltp_response.status_code == 200:
+                                            ltp_data = ltp_response.json()
+                                            key = list(ltp_data['data'].keys())[0]
+                                            rest_ltp = ltp_data['data'][key].get('last_price')
+                                        self.ltp_at_order = rest_ltp
+                                        
+                                        
+                                
+                                        
                                         await self.send(text_data=json.dumps({
-                                                'message': 'selling block',
-                                                'ltp': current_ltp,
-                                                'locked_LTP': self.locked_ltp
-                                            }))
+                                            'message': 'Token sell',
+                                            'Token_SELL':self.buy_token ,
+                                            'market_value':self.latest_spot_price,
+                                            'ltp': self.ltp_at_order,           
+                                            'order_datetime': order_timestamp,
+                                            'pnl_percent' : pnl_percent }))
+                                        
+                                        
+                                        
+                                        log_order_event(
+                                                self.account_name,
+                                                "Sell Order Executed",
+                                                {
+                                                    'Token_SELL': self.buy_token,
+                                                    'Market Value': self.latest_spot_price,
+                                                    'LTP': self.ltp_at_order,
+                                                    'Order Time': order_timestamp,
+                                                    'PNL %': pnl_percent
+                                                }
+                                            )
+                                        
+                                        
+                                        
 
                                         if self.toggle and pnl_percent < self.expected_profit_percent: 
                                             self.previous_ltp = None
@@ -513,10 +613,26 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                             self.toggle = False 
                                             
                                             
-                           
+                                            order_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                                            
                                             await self.send(text_data=json.dumps({
-                                                        'info': 'Profit less than expected. Consider reverse trade.'
-                                            }))
+                                                'message': ' Reverse token ...Order placed successfully...Waiting for square off',
+                                                'Token_BUy':self.buy_token ,
+                                                'market_value':self.latest_spot_price,
+                                                'ltp': self.ltp_at_order,           
+                                                'order_datetime': order_timestamp}))
+                                            
+                                            log_order_event(
+                                                    self.account_name,
+                                                    "Reverse Buy Order",
+                                                    {
+                                                        'Token_Buy': self.buy_token,
+                                                        'Market Value': self.latest_spot_price,
+                                                        'LTP': self.ltp_at_order,
+                                                        'Order Time': order_timestamp
+                                                    }
+                                                )
+    
                                             
                                             self.reset_trade_flags()
                                     
