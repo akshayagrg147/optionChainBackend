@@ -21,6 +21,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
         
         
         
+        
     def log_order_event(account_name: str, title: str, data: dict):
         log_block = [f"\n{'='*20} {account_name.upper()} | {title} {'='*20}"]
         for key, value in data.items():
@@ -129,8 +130,9 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
         total_amount = payload.get("total_amount")
         investable_amount = payload.get("investable_amount") 
         lot = payload.get("lot")
+        reverse_Trade = payload.get("reverseTrade")
         
-        if not instrument_key or not expiry_date or not access_token or not target_market_priceCE or not target_market_pricePE or not step or not quantity or not total_amount or not investable_amount or not lot:
+        if not instrument_key or not expiry_date or not access_token or not target_market_priceCE or not target_market_pricePE or not step or not quantity or not total_amount or not investable_amount or not lot or not reverse_Trade:
             await self.send(text_data=json.dumps({'error': 'Missing required fields'}))
             return
         try:
@@ -139,12 +141,12 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
         except ValueError:
             await self.send(text_data=json.dumps({'error': 'Invalid target_market_price'}))
             return  
-        asyncio.create_task(self.fetch_and_stream_data(instrument_key, expiry_date, access_token, trading_symbol,trading_symbol_2,quantity,total_amount,investable_amount,lot))
+        asyncio.create_task(self.fetch_and_stream_data(instrument_key, expiry_date, access_token, trading_symbol,trading_symbol_2,quantity,total_amount,investable_amount,lot,reverse_Trade))
       
 
 
 
-    async def fetch_and_stream_data(self, instrument_key, expiry_date, access_token, trading_symbol,trading_symbol_2,quantity,total_amount,investable_amounnt,lot):
+    async def fetch_and_stream_data(self, instrument_key, expiry_date, access_token, trading_symbol,trading_symbol_2,quantity,total_amount,investable_amounnt,lot,reverse_Trade):
         option_chain_url = "https://api.upstox.com/v2/option/chain"
            
         headers = {
@@ -581,7 +583,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                 }
                                             )
                                         
-                                        if self.toggle and pnl_percent < self.expected_profit_percent: 
+                                        if reverse_Trade == "ON" and pnl_percent < self.expected_profit_percent: 
                                             self.previous_ltp = None
                                             self.ltp_at_order = None
                                             self.locked_ltp = None
@@ -630,6 +632,8 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                         "is_amo": False  
                                                     }
                                             print(data)
+                                            
+                                            reverse_Trade = "OFF"
                                             
                                             self.toggle = False 
                                             

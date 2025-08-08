@@ -34,3 +34,387 @@ Order Time: 2025-08-08 11:29:02
 PNL %: 0.32
 ------------------------------------------------------------
 2025-08-08 11:29:02,889 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 13:03:13,944 | INFO | 
+==================== KUMAR ANSHUL SINGH | Buy Order Placed ====================
+Token_BUy: NSE_FO|66785
+Market Value: 55151.15
+LTP: 548.2
+Total Amount: 500000
+Investable Amount: 100000
+Order Time: 2025-08-08 13:03:13
+------------------------------------------------------------
+2025-08-08 13:03:14,417 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 13:03:22,806 | INFO | 
+==================== KUMAR ANSHUL SINGH | Sell Order Executed ====================
+Token_SELL: NSE_FO|66785
+Market Value: 55145.35
+LTP: 549.55
+Order Time: 2025-08-08 13:03:22
+PNL %: 0.01
+------------------------------------------------------------
+2025-08-08 13:03:23,282 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 13:03:23,566 | INFO | 
+==================== KUMAR ANSHUL SINGH | Reverse Buy Order ====================
+Token_Buy: NSE_FO|66784
+Market Value: 55145.35
+LTP: 609.6
+Order Time: 2025-08-08 13:03:23
+------------------------------------------------------------
+2025-08-08 13:03:23,737 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 13:03:45,789 | INFO | 
+==================== KUMAR ANSHUL SINGH | Sell Order Executed ====================
+Token_SELL: NSE_FO|66784
+Market Value: 55153.15
+LTP: 612.85
+Order Time: 2025-08-08 13:03:45
+PNL %: 0.71
+------------------------------------------------------------
+2025-08-08 13:03:46,203 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:11:58,807 | INFO | 
+==================== KUMAR ANSHUL SINGH | Buy Order Placed ====================
+Token_BUy: NSE_FO|66785
+Market Value: 55126.4
+LTP: 565.0
+Total Amount: 500000
+Investable Amount: 100000
+Order Time: 2025-08-08 14:11:58
+------------------------------------------------------------
+2025-08-08 14:11:59,612 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:12:05,082 | INFO | 
+==================== KUMAR ANSHUL SINGH | Sell Order Executed ====================
+Token_SELL: NSE_FO|66785
+Market Value: 55129.45
+LTP: 563.35
+Order Time: 2025-08-08 14:12:05
+PNL %: -0.29
+------------------------------------------------------------
+2025-08-08 14:12:05,285 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:12:05,622 | INFO | 
+==================== KUMAR ANSHUL SINGH | Reverse Buy Order ====================
+Token_Buy: NSE_FO|66784
+Market Value: 55129.45
+LTP: 592.2
+Order Time: 2025-08-08 14:12:05
+------------------------------------------------------------
+2025-08-08 14:12:05,825 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:12:07,916 | INFO | 
+==================== KUMAR ANSHUL SINGH | Sell Order Executed ====================
+Token_SELL: NSE_FO|66784
+Market Value: 55124.45
+LTP: 591.05
+Order Time: 2025-08-08 14:12:07
+PNL %: -0.3
+------------------------------------------------------------
+2025-08-08 14:12:08,121 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:12:08,475 | INFO | 
+==================== KUMAR ANSHUL SINGH | Reverse Buy Order ====================
+Token_Buy: NSE_FO|66784
+Market Value: 55124.45
+LTP: 591.8
+Order Time: 2025-08-08 14:12:08
+------------------------------------------------------------
+2025-08-08 14:12:08,688 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:13:17,566 | INFO | 
+==================== KUMAR ANSHUL SINGH | Buy Order Placed ====================
+Token_BUy: NSE_FO|66785
+Market Value: 55082.1
+LTP: 583.45
+Total Amount: 500000
+Investable Amount: 100000
+Order Time: 2025-08-08 14:13:17
+------------------------------------------------------------
+2025-08-08 14:13:18,048 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:13:21,758 | INFO | 
+==================== KUMAR ANSHUL SINGH | Sell Order Executed ====================
+Token_SELL: NSE_FO|66785
+Market Value: 55078.1
+LTP: 584.6
+Order Time: 2025-08-08 14:13:21
+PNL %: 0.21
+------------------------------------------------------------
+2025-08-08 14:13:21,956 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:13:22,281 | INFO | 
+==================== KUMAR ANSHUL SINGH | Reverse Buy Order ====================
+Token_Buy: NSE_FO|66784
+Market Value: 55078.1
+LTP: 568.4
+Order Time: 2025-08-08 14:13:22
+------------------------------------------------------------
+2025-08-08 14:13:22,487 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:13:37,949 | INFO | 
+==================== KUMAR ANSHUL SINGH | Sell Order Executed ====================
+Token_SELL: NSE_FO|66784
+Market Value: 55085.55
+LTP: 583.1
+Order Time: 2025-08-08 14:13:37
+PNL %: 2.04
+------------------------------------------------------------
+2025-08-08 14:13:38,441 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:13:38,779 | INFO | 
+==================== KUMAR ANSHUL SINGH | Reverse Buy Order ====================
+Token_Buy: NSE_FO|66784
+Market Value: 55085.55
+LTP: 582.3
+Order Time: 2025-08-08 14:13:38
+------------------------------------------------------------
+2025-08-08 14:13:38,993 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:13:39,704 | INFO | 
+==================== KUMAR ANSHUL SINGH | Sell Order Executed ====================
+Token_SELL: NSE_FO|66784
+Market Value: 55085.55
+LTP: 580.4
+Order Time: 2025-08-08 14:13:39
+PNL %: -0.39
+------------------------------------------------------------
+2025-08-08 14:13:39,953 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:13:40,284 | INFO | 
+==================== KUMAR ANSHUL SINGH | Reverse Buy Order ====================
+Token_Buy: NSE_FO|66784
+Market Value: 55085.55
+LTP: 580.45
+Order Time: 2025-08-08 14:13:40
+------------------------------------------------------------
+2025-08-08 14:13:40,518 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:14:31,674 | INFO | 
+==================== KUMAR ANSHUL SINGH | Buy Order Placed ====================
+Token_BUy: NSE_FO|66785
+Market Value: 55112.95
+LTP: 571.95
+Total Amount: 500000
+Investable Amount: 100000
+Order Time: 2025-08-08 14:14:31
+------------------------------------------------------------
+2025-08-08 14:14:32,226 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:14:37,619 | INFO | 
+==================== KUMAR ANSHUL SINGH | Sell Order Executed ====================
+Token_SELL: NSE_FO|66785
+Market Value: 55103.55
+LTP: 567.75
+Order Time: 2025-08-08 14:14:37
+PNL %: -0.61
+------------------------------------------------------------
+2025-08-08 14:14:37,861 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:14:38,245 | INFO | 
+==================== KUMAR ANSHUL SINGH | Reverse Buy Order ====================
+Token_Buy: NSE_FO|66784
+Market Value: 55103.55
+LTP: 587.35
+Order Time: 2025-08-08 14:14:38
+------------------------------------------------------------
+2025-08-08 14:14:38,462 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:14:44,445 | INFO | 
+==================== KUMAR ANSHUL SINGH | Buy Order Placed ====================
+Token_BUy: NSE_FO|66785
+Market Value: 55111.15
+LTP: 571.75
+Total Amount: 500000
+Investable Amount: 100000
+Order Time: 2025-08-08 14:14:44
+------------------------------------------------------------
+2025-08-08 14:14:44,939 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:14:48,205 | INFO | 
+==================== KUMAR ANSHUL SINGH | Sell Order Executed ====================
+Token_SELL: NSE_FO|66785
+Market Value: 55113.3
+LTP: 570.25
+Order Time: 2025-08-08 14:14:48
+PNL %: -0.26
+------------------------------------------------------------
+2025-08-08 14:14:48,410 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:14:48,748 | INFO | 
+==================== KUMAR ANSHUL SINGH | Reverse Buy Order ====================
+Token_Buy: NSE_FO|66784
+Market Value: 55113.3
+LTP: 586.35
+Order Time: 2025-08-08 14:14:48
+------------------------------------------------------------
+2025-08-08 14:14:48,982 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:14:58,977 | INFO | 
+==================== KUMAR ANSHUL SINGH | Sell Order Executed ====================
+Token_SELL: NSE_FO|66784
+Market Value: 55120.65
+LTP: 588.45
+Order Time: 2025-08-08 14:14:58
+PNL %: 0.32
+------------------------------------------------------------
+2025-08-08 14:14:59,470 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:15:18,152 | INFO | 
+==================== KUMAR ANSHUL SINGH | Buy Order Placed ====================
+Token_BUy: NSE_FO|66785
+Market Value: 55115.4
+LTP: 572.9
+Total Amount: 500000
+Investable Amount: 100000
+Order Time: 2025-08-08 14:15:18
+------------------------------------------------------------
+2025-08-08 14:15:18,637 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:15:21,764 | INFO | 
+==================== KUMAR ANSHUL SINGH | Sell Order Executed ====================
+Token_SELL: NSE_FO|66785
+Market Value: 55118.5
+LTP: 568.55
+Order Time: 2025-08-08 14:15:21
+PNL %: -0.3
+------------------------------------------------------------
+2025-08-08 14:15:22,003 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:15:22,328 | INFO | 
+==================== KUMAR ANSHUL SINGH | Reverse Buy Order ====================
+Token_Buy: NSE_FO|66784
+Market Value: 55118.5
+LTP: 588.1
+Order Time: 2025-08-08 14:15:22
+------------------------------------------------------------
+2025-08-08 14:15:22,620 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:19:05,053 | INFO | 
+==================== KUMAR ANSHUL SINGH | Buy Order Placed ====================
+Token_BUy: NSE_FO|66785
+Market Value: 55170.7
+LTP: 549.45
+Total Amount: 500000
+Investable Amount: 100000
+Order Time: 2025-08-08 14:19:05
+------------------------------------------------------------
+2025-08-08 14:19:05,550 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:19:14,426 | INFO | 
+==================== KUMAR ANSHUL SINGH | Sell Order Executed ====================
+Token_SELL: NSE_FO|66785
+Market Value: 55169.35
+LTP: 550.35
+Order Time: 2025-08-08 14:19:14
+PNL %: 0.16
+------------------------------------------------------------
+2025-08-08 14:19:14,902 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:19:15,234 | INFO | 
+==================== KUMAR ANSHUL SINGH | Reverse Buy Order ====================
+Token_Buy: NSE_FO|66784
+Market Value: 55169.35
+LTP: 609.25
+Order Time: 2025-08-08 14:19:15
+------------------------------------------------------------
+2025-08-08 14:19:15,445 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:19:47,080 | INFO | 
+==================== KUMAR ANSHUL SINGH | Buy Order Placed ====================
+Token_BUy: NSE_FO|66785
+Market Value: 55157.55
+LTP: 553.55
+Total Amount: 500000
+Investable Amount: 100000
+Order Time: 2025-08-08 14:19:47
+------------------------------------------------------------
+2025-08-08 14:19:47,582 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:20:03,845 | INFO | 
+==================== KUMAR ANSHUL SINGH | Sell Order Executed ====================
+Token_SELL: NSE_FO|66785
+Market Value: 55153.75
+LTP: 553.0
+Order Time: 2025-08-08 14:20:03
+PNL %: -0.1
+------------------------------------------------------------
+2025-08-08 14:20:04,369 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:20:04,957 | INFO | 
+==================== KUMAR ANSHUL SINGH | Reverse Buy Order ====================
+Token_Buy: NSE_FO|66784
+Market Value: 55153.75
+LTP: 605.2
+Order Time: 2025-08-08 14:20:04
+------------------------------------------------------------
+2025-08-08 14:20:05,200 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:22:03,076 | INFO | 
+==================== KUMAR ANSHUL SINGH | Buy Order Placed ====================
+Token_BUy: NSE_FO|66785
+Market Value: 55155.75
+LTP: 558.0
+Total Amount: 500000
+Investable Amount: 100000
+Order Time: 2025-08-08 14:22:03
+------------------------------------------------------------
+2025-08-08 14:22:06,726 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:22:41,715 | INFO | 
+==================== KUMAR ANSHUL SINGH | Sell Order Executed ====================
+Token_SELL: NSE_FO|66785
+Market Value: 55155.25
+LTP: 554.0
+Order Time: 2025-08-08 14:22:41
+PNL %: -0.72
+------------------------------------------------------------
+2025-08-08 14:22:42,272 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:22:42,607 | INFO | 
+==================== KUMAR ANSHUL SINGH | Reverse Buy Order ====================
+Token_Buy: NSE_FO|66784
+Market Value: 55155.25
+LTP: 605.85
+Order Time: 2025-08-08 14:22:42
+------------------------------------------------------------
+2025-08-08 14:22:42,855 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:23:23,089 | INFO | 
+==================== KUMAR ANSHUL SINGH | Sell Order Executed ====================
+Token_SELL: NSE_FO|66784
+Market Value: 55159.9
+LTP: 607.3
+Order Time: 2025-08-08 14:23:23
+PNL %: 0.24
+------------------------------------------------------------
+2025-08-08 14:23:23,576 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:23:23,898 | INFO | 
+==================== KUMAR ANSHUL SINGH | Reverse Buy Order ====================
+Token_Buy: NSE_FO|66784
+Market Value: 55159.9
+LTP: 607.3
+Order Time: 2025-08-08 14:23:23
+------------------------------------------------------------
+2025-08-08 14:23:24,149 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:23:44,290 | INFO | 
+==================== KUMAR ANSHUL SINGH | Buy Order Placed ====================
+Token_BUy: NSE_FO|66785
+Market Value: 55152.35
+LTP: 556.05
+Total Amount: 500000
+Investable Amount: 100000
+Order Time: 2025-08-08 14:23:44
+------------------------------------------------------------
+2025-08-08 14:23:44,799 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:24:12,470 | INFO | 
+==================== KUMAR ANSHUL SINGH | Sell Order Executed ====================
+Token_SELL: NSE_FO|66785
+Market Value: 55147.55
+LTP: 557.25
+Order Time: 2025-08-08 14:24:12
+PNL %: 0.22
+------------------------------------------------------------
+2025-08-08 14:24:13,008 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:24:13,321 | INFO | 
+==================== KUMAR ANSHUL SINGH | Reverse Buy Order ====================
+Token_Buy: NSE_FO|66784
+Market Value: 55147.55
+LTP: 601.1
+Order Time: 2025-08-08 14:24:13
+------------------------------------------------------------
+2025-08-08 14:24:13,553 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:24:23,858 | INFO | 
+==================== KUMAR ANSHUL SINGH | Sell Order Executed ====================
+Token_SELL: NSE_FO|66784
+Market Value: 55148.1
+LTP: 596.1
+Order Time: 2025-08-08 14:24:23
+PNL %: -0.47
+------------------------------------------------------------
+2025-08-08 14:24:24,374 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:24:56,495 | INFO | 
+==================== KUMAR ANSHUL SINGH | Buy Order Placed ====================
+Token_BUy: NSE_FO|66785
+Market Value: 55147.3
+LTP: 561.1
+Total Amount: 500000
+Investable Amount: 100000
+Order Time: 2025-08-08 14:24:56
+------------------------------------------------------------
+2025-08-08 14:25:04,396 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-08 14:25:05,724 | INFO | 
+==================== KUMAR ANSHUL SINGH | Sell Order Executed ====================
+Token_SELL: NSE_FO|66785
+Market Value: 55147.3
+LTP: 559.0
+Order Time: 2025-08-08 14:25:05
+PNL %: -0.29
+------------------------------------------------------------
+2025-08-08 14:25:06,905 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
