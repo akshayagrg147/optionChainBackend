@@ -12,7 +12,7 @@ import csv
 from django.conf import settings
 import time
 from datetime import datetime
-from .setup_log import log_order_event
+from .setup_log import log_order_event ,logger
 class LiveOptionDataConsumer(AsyncWebsocketConsumer): 
     def reset_trade_flags(self):
         self.sell_order_placed = False
@@ -581,9 +581,6 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                 }
                                             )
                                         
-                                        
-                                        
-
                                         if self.toggle and pnl_percent < self.expected_profit_percent: 
                                             self.previous_ltp = None
                                             self.ltp_at_order = None
@@ -604,21 +601,23 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                     rest_ltp = ltp_data['data'][key].get('last_price')
                                             self.ltp_at_order = rest_ltp
                                             
-                                            
+                                            print('total_amount',total_amount)
+                                            print('innvestable_anouut',investable_amounnt)
                                             if pnl_percent > 0 :
                                                  new_investable = investable_amounnt + (pnl_percent / 100) * investable_amounnt
                                             else:
                                                 new_investable = investable_amounnt - (abs(pnl_percent) / 100) * investable_amounnt
                                             
-                                           
+                                            print('new investable',new_investable)
+                                            print(self.ltp_at_order)
                                             self.rq = lot * (new_investable // (self.ltp_at_order * lot))
-                                            print(self.rq)
+                                            quantity = self.rq
                                             
 
                                             print("Executing reverse trade with token:", self.reverse_token)
                                         
                                             data = {
-                                                        "quantity": self.rq,
+                                                        "quantity": quantity,
                                                         "product": "I",
                                                         "validity": "DAY",
                                                         "price": 0,
