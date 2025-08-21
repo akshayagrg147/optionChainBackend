@@ -418,3 +418,51 @@ Order Time: 2025-08-08 14:25:05
 PNL %: -0.29
 ------------------------------------------------------------
 2025-08-08 14:25:06,905 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-11 13:08:30,906 | INFO | 
+==================== KUMAR ANSHUL SINGH | Buy Order Placed ====================
+Token_BUy: NSE_FO|44513
+Market Value: 24473.05
+LTP: 497.25
+Total Amount: 500000
+Investable Amount: 100000
+Order Time: 2025-08-11 13:08:30
+------------------------------------------------------------
+2025-08-11 13:08:31,788 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-11 13:11:22,827 | INFO | 
+==================== KUMAR ANSHUL SINGH | Buy Order Placed ====================
+Token_BUy: NSE_FO|44513
+Market Value: 24469.9
+LTP: 498.0
+Total Amount: 500000
+Investable Amount: 100000
+Order Time: 2025-08-11 13:11:22
+------------------------------------------------------------
+2025-08-11 13:11:23,745 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-11 13:11:43,313 | INFO | 
+==================== KUMAR ANSHUL SINGH | Sell Order Executed ====================
+Token_SELL: NSE_FO|44513
+Market Value: 24465.9
+LTP: 504.0
+Order Time: 2025-08-11 13:11:43
+PNL %: 1.2
+------------------------------------------------------------
+2025-08-11 13:11:43,914 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-11 13:14:39,597 | INFO | 
+==================== KUMAR ANSHUL SINGH | Buy Order Placed ====================
+Token_BUy: NSE_FO|44512
+Market Value: 24475.7
+LTP: 7.55
+Total Amount: 500000
+Investable Amount: 100000
+Order Time: 2025-08-11 13:14:39
+------------------------------------------------------------
+2025-08-11 13:14:40,127 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-08-11 13:14:43,672 | INFO | 
+==================== KUMAR ANSHUL SINGH | Sell Order Executed ====================
+Token_SELL: NSE_FO|44512
+Market Value: 24476.15
+LTP: 7.65
+Order Time: 2025-08-11 13:14:43
+PNL %: 0.66
+------------------------------------------------------------
+2025-08-11 13:14:43,967 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
