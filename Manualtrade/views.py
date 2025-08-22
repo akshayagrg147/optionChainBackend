@@ -11,7 +11,7 @@ import json
 import requests
 from .logger import write_log_to_txt
 from datetime import datetime
-
+from .logger import LOG_FILE_PATH
 
 buy_order_successful = False
 buy_order_price = 0.0
@@ -293,3 +293,19 @@ class PlaceUpstoxSellOrderAPIView(APIView):
             return Response({"success": False, "error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     
+from django.http import FileResponse, Http404   
+class DownloadUpstoxLogAPIView(APIView):
+    def get(self, request):
+        if not os.path.exists(LOG_FILE_PATH):
+            return Response({"error": "Log file not found"}, status=404)
+        
+        try:
+            # Send the file as a downloadable response
+            response = FileResponse(
+                open(LOG_FILE_PATH, 'rb'),
+                as_attachment=True,
+                filename='upstox_orders.txt'
+            )
+            return response
+        except Exception as e:
+            return Response({"error": f"Failed to download log: {str(e)}"}, status=500)
