@@ -4,8 +4,7 @@ from datetime import datetime
 import boto3
 from dotenv import load_dotenv  
 
-# ✅ Load .env variables
-load_dotenv()
+
 
 
 

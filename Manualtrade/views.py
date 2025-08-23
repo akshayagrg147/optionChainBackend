@@ -84,6 +84,7 @@ class PlaceUpstoxBuyOrderAPIView(APIView):
             response = requests.get("https://api.upstox.com/v2/user/profile", headers=headers)
             if response.status_code == 200:
                 data = response.json()
+                print(data['data']['user_name'])
                 return data['data']['user_name']
             else:
                 write_log_to_txt(f"❌ Error fetching user name: {response.status_code} {response.text}")
@@ -123,7 +124,7 @@ class PlaceUpstoxBuyOrderAPIView(APIView):
             "slice": True
         }
 
-        url = "https://api-sandbox.upstox.com/v3/order/place"
+        url = "https://api-hft.upstox.com/v3/order/place"
         headers = {
             'Content-Type': 'application/json',
             'Authorization': f'Bearer {access_token}'
@@ -236,7 +237,7 @@ class PlaceUpstoxSellOrderAPIView(APIView):
             "slice": True
         }
 
-        url = "https://api-sandbox.upstox.com/v3/order/place"
+        url = "https://api-hft.upstox.com/v3/order/place"
         headers = {
             'Content-Type': 'application/json',
             'Authorization': f'Bearer {access_token}'
