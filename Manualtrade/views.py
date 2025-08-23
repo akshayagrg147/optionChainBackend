@@ -310,3 +310,7 @@ class DownloadUpstoxLogAPIView(APIView):
             return response
         except Exception as e:
             return Response({"error": f"Failed to download log: {str(e)}"}, status=500)
+        
+class log(APIView):
+    def get(self, request):
+        return Response({'msg': "Happy"})
