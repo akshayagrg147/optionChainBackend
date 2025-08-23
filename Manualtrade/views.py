@@ -134,10 +134,11 @@ class PlaceUpstoxBuyOrderAPIView(APIView):
             response = requests.post(url, headers=headers, data=json.dumps(order_data))
             order_response = response.json()
             
-            buy_order_successful = True
+            
             
             
             if order_response.get("status") == "success":
+                buy_order_successful = True
                 order_id = order_response["data"]["order_ids"][0]
                 
                 
