@@ -6,6 +6,6 @@ urlpatterns = [
             path('api/place-upstox-order-buy/', PlaceUpstoxBuyOrderAPIView.as_view(), name='place-upstox-order'),
             path('api/place-upstox-order-sell/', PlaceUpstoxSellOrderAPIView.as_view(), name='place-upstox-order'),
             path('download-log/', DownloadUpstoxLogAPIView.as_view(), name='download-log'),
-            path('logs/', log.as_view()),
+            path('log/', log.as_view()),
            
 ]
