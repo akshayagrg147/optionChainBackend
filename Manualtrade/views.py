@@ -140,9 +140,10 @@ class PlaceUpstoxBuyOrderAPIView(APIView):
             if order_response.get("status") == "success":
                 buy_order_successful = True
                 order_id = order_response["data"]["order_ids"][0]
+                print('order_id',order_id)
                 
                 
-                details_url = f"https://api-sandbox.upstox.com/v2/order/details?order_id={order_id}"
+                details_url = f"https://api.upstox.com/v3/market-quote/ltp?instrument_key={instrument_token}"
 
                 detail_headers = {
                     'Accept': 'application/json',
@@ -154,7 +155,10 @@ class PlaceUpstoxBuyOrderAPIView(APIView):
                
 
                 if detail_data.get("status") == "success":
-                    price = detail_data["data"].get("price")
+                    instrument_key = list(detail_data["data"].keys())[0]  
+                    price = detail_data["data"][instrument_key]["last_price"]
+                    print('price')
+                  
                     buy_order_price = float(price)
                     
                     write_log_to_txt(
@@ -251,18 +255,23 @@ class PlaceUpstoxSellOrderAPIView(APIView):
             if response_data.get("status") == "success":
                 order_id = response_data["data"]["order_ids"][0]
 
-                details_url = f"https://api-sandbox.upstox.com/v2/order/details?order_id={order_id}"
+                details_url = f"https://api.upstox.com/v3/market-quote/ltp?instrument_key={instrument_token}"
+
                 detail_headers = {
                     'Accept': 'application/json',
                     'Authorization': f'Bearer {access_token}'
                 }
-                user_name = self.fetch_upstox_user_name(access_token)
 
                 detail_resp = requests.get(details_url, headers=detail_headers)
                 detail_data = detail_resp.json()
-                
+               
+
                 if detail_data.get("status") == "success":
-                    price = detail_data["data"].get("price")
+                    instrument_key = list(detail_data["data"].keys())[0]  
+                    price = detail_data["data"][instrument_key]["last_price"]
+                    print('price')
+                  
+                
                     sell_price = float(price)
                     if buy_order_price and buy_order_price != 0:
                         pnl_percent = ((sell_price - buy_order_price) / buy_order_price) * 100
