@@ -143,7 +143,7 @@ class PlaceUpstoxBuyOrderAPIView(APIView):
                 print('order_id',order_id)
                 
                 
-                details_url = f"https://api.upstox.com/v3/market-quote/ltp?instrument_key={instrument_token}"
+                details_url = f"https://api.upstox.com/v2/order/details?order_id={order_id}"
 
                 detail_headers = {
                     'Accept': 'application/json',
@@ -155,8 +155,8 @@ class PlaceUpstoxBuyOrderAPIView(APIView):
                
 
                 if detail_data.get("status") == "success":
-                    instrument_key = list(detail_data["data"].keys())[0]  
-                    price = detail_data["data"][instrument_key]["last_price"]
+                    
+                    price = detail_data["data"]["average_price"]
                     print('price')
                   
                     buy_order_price = float(price)
@@ -255,7 +255,7 @@ class PlaceUpstoxSellOrderAPIView(APIView):
             if response_data.get("status") == "success":
                 order_id = response_data["data"]["order_ids"][0]
 
-                details_url = f"https://api.upstox.com/v3/market-quote/ltp?instrument_key={instrument_token}"
+                details_url = f"https://api.upstox.com/v2/order/details?order_id={order_id}"
 
                 detail_headers = {
                     'Accept': 'application/json',
@@ -267,8 +267,8 @@ class PlaceUpstoxSellOrderAPIView(APIView):
                
 
                 if detail_data.get("status") == "success":
-                    instrument_key = list(detail_data["data"].keys())[0]  
-                    price = detail_data["data"][instrument_key]["last_price"]
+                    
+                    price = detail_data["data"]["average_price"]
                     print('price')
                   
                 
