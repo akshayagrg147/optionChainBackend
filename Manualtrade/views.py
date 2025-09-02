@@ -133,12 +133,13 @@ class PlaceUpstoxBuyOrderAPIView(APIView):
         try:
             response = requests.post(url, headers=headers, data=json.dumps(order_data))
             order_response = response.json()
+            print('placed',order_response)
             
             
             
             
             if order_response.get("status") == "success":
-                buy_order_successful = True
+                
                 order_id = order_response["data"]["order_ids"][0]
                 print('order_id',order_id)
                 
@@ -152,12 +153,14 @@ class PlaceUpstoxBuyOrderAPIView(APIView):
 
                 detail_resp = requests.get(details_url, headers=detail_headers)
                 detail_data = detail_resp.json()
+                print('Oder_id',detail_data)
                
 
-                if detail_data.get("status") == "success":
+                if detail_data.get("status") == "success" and detail_data["data"]["status"] == "complete" :
                     
                     price = detail_data["data"]["average_price"]
-                    print('price')
+                    buy_order_successful = True
+                    
                   
                     buy_order_price = float(price)
                     
@@ -174,7 +177,7 @@ class PlaceUpstoxBuyOrderAPIView(APIView):
                 else:
                     return Response({
                         "success": False,
-                        "message": "Order placed, but failed to fetch order details.",
+                        "message": detail_data["data"]["status_message"],
                         "order_id": order_id
                     }, status=200)
 
@@ -251,6 +254,7 @@ class PlaceUpstoxSellOrderAPIView(APIView):
         try:
             response = requests.post(url, headers=headers, data=json.dumps(order_data))
             response_data = response.json()
+            print(response_data)
 
             if response_data.get("status") == "success":
                 order_id = response_data["data"]["order_ids"][0]
@@ -264,6 +268,7 @@ class PlaceUpstoxSellOrderAPIView(APIView):
 
                 detail_resp = requests.get(details_url, headers=detail_headers)
                 detail_data = detail_resp.json()
+                
                
 
                 if detail_data.get("status") == "success":

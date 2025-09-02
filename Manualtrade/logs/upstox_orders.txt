@@ -1,0 +1,9 @@
+2025-09-02 12:57:23 -  ✅ BUY ORDER PLACED |  User:Kumar Anshul Singh , Quantity: 75, | Token: NSE_FO|48937, BUY IN LTP: 0.0, Total Amount: None , Investable Amount: None | Time: 2025-09-02 12:57:23
+2025-09-02 12:58:22 -  ✅ BUY ORDER PLACED |  User:Kumar Anshul Singh , Quantity: 75, | Token: NSE_FO|48937, BUY IN LTP: 0.0, Total Amount: None , Investable Amount: None | Time: 2025-09-02 12:58:22
+2025-09-02 13:09:16 -  ✅ BUY ORDER PLACED |  User:Kumar Anshul Singh , Quantity: 75, | Token: NSE_FO|48937, BUY IN LTP: 0.0, Total Amount: None , Investable Amount: None | Time: 2025-09-02 13:09:16
+2025-09-02 13:10:05 -  ✅ BUY ORDER PLACED |  User:Kumar Anshul Singh , Quantity: 75, | Token: NSE_FO|48937, BUY IN LTP: 0.0, Total Amount: None , Investable Amount: None | Time: 2025-09-02 13:10:05
+2025-09-02 13:12:32 -  ✅ BUY ORDER PLACED |  User:Kumar Anshul Singh , Quantity: 75, | Token: NSE_FO|48937, BUY IN LTP: 0.0, Total Amount: None , Investable Amount: None | Time: 2025-09-02 13:12:32
+2025-09-02 13:13:27 -  ✅ BUY ORDER PLACED |  User:Kumar Anshul Singh , Quantity: 75, | Token: NSE_FO|48937, BUY IN LTP: 0.0, Total Amount: None , Investable Amount: None | Time: 2025-09-02 13:13:27
+2025-09-02 13:14:15 -  ✅ BUY ORDER PLACED |  User:Kumar Anshul Singh , Quantity: 75, | Token: NSE_FO|48937, BUY IN LTP: 0.0, Total Amount: None , Investable Amount: None | Time: 2025-09-02 13:14:15
+2025-09-02 13:26:47 -  ✅ BUY ORDER PLACED |  User:Kumar Anshul Singh , Quantity: 75, | Token: NSE_FO|49001, BUY IN LTP: 0.25, Total Amount: None , Investable Amount: None | Time: 2025-09-02 13:26:47
+2025-09-02 13:27:11 - ✅ SELL ORDER PLACED | User: Kumar Anshul Singh | Qty: 75 | Token: NSE_FO|49001 | SELL IN LTP: ₹0.2 |PnL: -20.0% | Total Amount: None | Investable Amount: None| Time: 2025-09-02 13:27:11
