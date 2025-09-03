@@ -124,7 +124,8 @@ class PlaceUpstoxBuyOrderAPIView(APIView):
             "slice": True
         }
 
-        url = "https://api-hft.upstox.com/v3/order/place"
+        #url = "https://api-hft.upstox.com/v3/order/place"  # real trade api 
+        url = "https://api-sandbox.upstox.com/v3/order/place"  #sandbox token 
         headers = {
             'Content-Type': 'application/json',
             'Authorization': f'Bearer {access_token}'
@@ -156,9 +157,11 @@ class PlaceUpstoxBuyOrderAPIView(APIView):
                 print('Oder_id',detail_data)
                
 
-                if detail_data.get("status") == "success" and detail_data["data"]["status"] == "complete" :
+                #if detail_data.get("status") == "success" and detail_data["data"]["status"] == "complete" :
+                if detail_data.get("status") == "error":
                     
-                    price = detail_data["data"]["average_price"]
+                    #price = detail_data["data"]["average_price"]
+                    price = 0 
                     buy_order_successful = True
                     
                   
@@ -245,7 +248,11 @@ class PlaceUpstoxSellOrderAPIView(APIView):
             "slice": True
         }
 
-        url = "https://api-hft.upstox.com/v3/order/place"
+       # url = "https://api-hft.upstox.com/v3/order/place" # real trade api 
+        
+        url = "https://api-sandbox.upstox.com/v3/order/place" # sandbox token 
+        
+        
         headers = {
             'Content-Type': 'application/json',
             'Authorization': f'Bearer {access_token}'
@@ -257,6 +264,7 @@ class PlaceUpstoxSellOrderAPIView(APIView):
             print(response_data)
 
             if response_data.get("status") == "success":
+            
                 order_id = response_data["data"]["order_ids"][0]
 
                 details_url = f"https://api.upstox.com/v2/order/details?order_id={order_id}"
@@ -271,9 +279,11 @@ class PlaceUpstoxSellOrderAPIView(APIView):
                 
                
 
-                if detail_data.get("status") == "success":
+                #if detail_data.get("status") == "success":
+                if detail_data.get("status") == "error":
                     
-                    price = detail_data["data"]["average_price"]
+                    #price = detail_data["data"]["average_price"]
+                    price  = 0 
                     print('price')
                   
                 
