@@ -11,6 +11,7 @@ import json
 import requests
 from .logger import write_log_to_txt
 from datetime import datetime
+from .utils import fetch_order_status
 from .logger import LOG_FILE_PATH
 
 buy_order_successful = False
@@ -124,8 +125,8 @@ class PlaceUpstoxBuyOrderAPIView(APIView):
             "slice": True
         }
 
-        #url = "https://api-hft.upstox.com/v3/order/place"  # real trade api 
-        url = "https://api-sandbox.upstox.com/v3/order/place"  #sandbox token 
+        url = "https://api-hft.upstox.com/v3/order/place"  # real trade api 
+        #url = "https://api-sandbox.upstox.com/v3/order/place"  #sandbox token 
         headers = {
             'Content-Type': 'application/json',
             'Authorization': f'Bearer {access_token}'
@@ -143,46 +144,46 @@ class PlaceUpstoxBuyOrderAPIView(APIView):
                 
                 order_id = order_response["data"]["order_ids"][0]
                 print('order_id',order_id)
+                detail_data = fetch_order_status(order_id, access_token)
                 
                 
-                details_url = f"https://api.upstox.com/v2/order/details?order_id={order_id}"
+        
+                if detail_data and detail_data.get("status") == "success":
+                    order_status = detail_data["data"]["status"]
 
-                detail_headers = {
-                    'Accept': 'application/json',
-                    'Authorization': f'Bearer {access_token}'
-                }
-
-                detail_resp = requests.get(details_url, headers=detail_headers)
-                detail_data = detail_resp.json()
-                print('Oder_id',detail_data)
-               
-
-                #if detail_data.get("status") == "success" and detail_data["data"]["status"] == "complete" :
-                if detail_data.get("status") == "error":
+                    if order_status == "complete":
                     
-                    #price = detail_data["data"]["average_price"]
-                    price = 0 
-                    buy_order_successful = True
+                        price = detail_data["data"]["average_price"]
+                  
+                        buy_order_successful = True
                     
                   
-                    buy_order_price = float(price)
+                        buy_order_price = float(price)
                     
-                    write_log_to_txt(
-                        f" ✅ BUY ORDER PLACED |  User:{user_name} , Quantity: {quantity}, | Token: {instrument_token}, BUY IN LTP: {price}, Total Amount: {total_amount} , Investable Amount: {investable_amount} | Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-                    )
+                        write_log_to_txt(
+                            f" ✅ BUY ORDER PLACED |  User:{user_name} , Quantity: {quantity}, | Token: {instrument_token}, BUY IN LTP: {price}, Total Amount: {total_amount} , Investable Amount: {investable_amount} | Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                        )
                     
-                    return Response({
-                        "success": True,
-                        "message": f"Order placed successfully at price ₹{price}",
-                        "order_id": order_id,
-                        "price": price
-                    }, status=200)
-                else:
-                    return Response({
-                        "success": False,
-                        "message": detail_data["data"]["status_message"],
-                        "order_id": order_id
-                    }, status=200)
+                        return Response({
+                            "success": True,
+                            "message": f"Order placed successfully at price ₹{price}",
+                            "order_id": order_id,
+                            "price": price
+                        }, status=200)
+                    else:
+                        error_message = detail_data["data"]["status_message"]
+                        write_log_to_txt(
+                                    f"❌ BUY ORDER FAILED | User: {user_name} | Quantity: {quantity} | "
+                                    f"Token: {instrument_token} Total Amount: {total_amount} | "
+                                    f"Investable Amount: {investable_amount} | Error: {error_message} | "
+                                    f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                                )
+                        
+                        return Response({
+                            "success": False,
+                            "message": error_message,
+                            "order_id": order_id
+                        }, status=200)
 
             else:
                 return Response(order_response, status=response.status_code)
@@ -248,9 +249,9 @@ class PlaceUpstoxSellOrderAPIView(APIView):
             "slice": True
         }
 
-       # url = "https://api-hft.upstox.com/v3/order/place" # real trade api 
+        url = "https://api-hft.upstox.com/v3/order/place" # real trade api 
         
-        url = "https://api-sandbox.upstox.com/v3/order/place" # sandbox token 
+        
         
         
         headers = {
@@ -266,50 +267,43 @@ class PlaceUpstoxSellOrderAPIView(APIView):
             if response_data.get("status") == "success":
             
                 order_id = response_data["data"]["order_ids"][0]
-
-                details_url = f"https://api.upstox.com/v2/order/details?order_id={order_id}"
-
-                detail_headers = {
-                    'Accept': 'application/json',
-                    'Authorization': f'Bearer {access_token}'
-                }
-
-                detail_resp = requests.get(details_url, headers=detail_headers)
-                detail_data = detail_resp.json()
                 
-               
-
-                #if detail_data.get("status") == "success":
-                if detail_data.get("status") == "error":
+                detail_data = fetch_order_status(order_id, access_token)
+                
+                if detail_data and detail_data.get("status") == "success":
+                    order_status = detail_data["data"]["status"]
                     
-                    #price = detail_data["data"]["average_price"]
-                    price  = 0 
-                    print('price')
-                  
-                
-                    sell_price = float(price)
-                    if buy_order_price and buy_order_price != 0:
-                        pnl_percent = ((sell_price - buy_order_price) / buy_order_price) * 100
-                        pnl_percent = round(pnl_percent, 2)
+                    
+                    if order_status == "complete":
+                        price = detail_data["data"]["average_price"]
+                        sell_price = float(price)
+                        if buy_order_price and buy_order_price != 0:
+                            pnl_percent = ((sell_price - buy_order_price) / buy_order_price) * 100
+                            pnl_percent = round(pnl_percent, 2)
+                        else:
+                            pnl_percent = 0.0
+                        buy_order_successful = False
+                        write_log_to_txt(f"✅ SELL ORDER PLACED | User: {user_name} | Qty: {quantity} | Token: {instrument_token} | SELL IN LTP: ₹{price} |PnL: {pnl_percent}% | Total Amount: {total_amount} | Investable Amount: {investable_amount}| Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+                        return Response({
+                            "success": True,
+                            "message": f"Sell order placed successfully at price ₹{price}",
+                            "order_id": order_id,
+                            "price": price
+                        }, status=200)
                     else:
-                        pnl_percent = 0.0
-     
-                    write_log_to_txt(f"✅ SELL ORDER PLACED | User: {user_name} | Qty: {quantity} | Token: {instrument_token} | SELL IN LTP: ₹{price} |PnL: {pnl_percent}% | Total Amount: {total_amount} | Investable Amount: {investable_amount}| Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-
-                    return Response({
-                        "success": True,
-                        "message": f"Sell order placed successfully at price ₹{price}",
-                        "order_id": order_id,
-                        "price": price
-                    }, status=200)
-                else:
-                    write_log_to_txt(f"SELL ORDER DETAIL FETCH FAILED | Order ID: {order_id} | Response: {detail_data}")
-
-                    return Response({
-                        "success": True,
-                        "message": "Sell order placed, but failed to fetch order details.",
-                        "order_id": order_id
-                    }, status=200)
+                        error_message = detail_data["data"]["status_message"]
+                        write_log_to_txt(
+                                    f"❌ SELL ORDER FAILED | User: {user_name} | Quantity: {quantity} | "
+                                    f"Token: {instrument_token}  | Total Amount: {total_amount} | "
+                                    f"Investable Amount: {investable_amount} | Error: {error_message} | "
+                                    f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                                )
+                        return Response({
+                            "success": False,
+                            "message": detail_data["data"]["status_message"],
+                            "order_id": order_id
+                        }, status=200)
             else:
                 write_log_to_txt(f"SELL ORDER FAILED | Qty: {quantity} | Token: {instrument_token} | Response: {response_data}")
                 return Response(response_data, status=response.status_code)
