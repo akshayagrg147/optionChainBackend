@@ -122,7 +122,7 @@ class PlaceUpstoxBuyOrderAPIView(APIView):
             "disclosed_quantity": 0,
             "trigger_price": 0,
             "is_amo": False,
-            "slice": True
+            "slice": False
         }
 
         url = "https://api-hft.upstox.com/v3/order/place"  # real trade api 
@@ -246,7 +246,7 @@ class PlaceUpstoxSellOrderAPIView(APIView):
             "disclosed_quantity": 0,
             "trigger_price": 0,
             "is_amo": False,
-            "slice": True
+            "slice": False
         }
 
         url = "https://api-hft.upstox.com/v3/order/place" # real trade api 
