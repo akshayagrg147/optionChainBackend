@@ -371,8 +371,8 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                             "slice": True
                                         }
 
-                                        #url = "https://api-hft.upstox.com/v3/order/place"  # real trade api 
-                                        url = "https://api-sandbox.upstox.com/v3/order/place"  #sandbox token 
+                                        url = "https://api-hft.upstox.com/v3/order/place"  # real trade api 
+                                        #url = "https://api-sandbox.upstox.com/v3/order/place"  #sandbox token 
                                         headers = {
                                             'Content-Type': 'application/json',
                                             'Authorization': f'Bearer {access_token}'
@@ -479,8 +479,8 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                     "slice": True
                                                 }
 
-                                            #url = "https://api-hft.upstox.com/v3/order/place"  # real trade api 
-                                            url = "https://api-sandbox.upstox.com/v3/order/place"  #sandbox token 
+                                            url = "https://api-hft.upstox.com/v3/order/place"  # real trade api 
+                                            #url = "https://api-sandbox.upstox.com/v3/order/place"  #sandbox token 
                                             headers = {
                                                 'Content-Type': 'application/json',
                                                 'Authorization': f'Bearer {access_token}'
@@ -607,8 +607,8 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                             "slice": True
                                         }
 
-                                        #url = "https://api-hft.upstox.com/v3/order/place"  # real trade api 
-                                        url = "https://api-sandbox.upstox.com/v3/order/place"  #sandbox token 
+                                        url = "https://api-hft.upstox.com/v3/order/place"  # real trade api 
+                                        #url = "https://api-sandbox.upstox.com/v3/order/place"  #sandbox token 
                                         headers = {
                                             'Content-Type': 'application/json',
                                             'Authorization': f'Bearer {access_token}'
@@ -735,8 +735,8 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                     "slice": True
                                                 }
 
-                                            #url = "https://api-hft.upstox.com/v3/order/place"  # real trade api 
-                                            url = "https://api-sandbox.upstox.com/v3/order/place"  #sandbox token 
+                                            url = "https://api-hft.upstox.com/v3/order/place"  # real trade api 
+                                            # url = "https://api-sandbox.upstox.com/v3/order/place"  #sandbox token 
                                             headers = {
                                                 'Content-Type': 'application/json',
                                                 'Authorization': f'Bearer {access_token}'
