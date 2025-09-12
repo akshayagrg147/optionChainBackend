@@ -390,7 +390,9 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                 if detail_data and detail_data.get("status") == "success":
                                                     order_status = detail_data["data"]["status"]
                                                     if order_status == "complete":
-                                                        self.order_placedCE  = True                                                 
+                                                      
+                                                        self.order_placedPE  = True
+                                                        self.order_placedCE  = True                                                
                                                         price = detail_data["data"]["average_price"]
                                                         buy_order_price = float(price)
                                                         self.ltp_at_order = buy_order_price
@@ -458,8 +460,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                             print(f'✅ In PlaceOrder Execution Block PE: SPOT: {self.latest_spot_price}, Target: {self.target_market_pricePE}')
                                             self.ltp_at_order = rest_ltp 
                                     
-                                            self.order_placedPE  = True
-                                            self.order_placedCE  = True
+                                            
                                             self.buy_token = pe_token
                                             self.reverse_token = pe_reverse_token
                                             order_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -502,6 +503,8 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                             price = detail_data["data"]["average_price"]
                                                             buy_order_price = float(price)
                                                             self.ltp_at_order = buy_order_price
+                                                            self.order_placedPE  = True
+                                                            self.order_placedCE  = True
                                                             
                                                             
                                                             log_order_event(
@@ -639,6 +642,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                                 'BUY LTP': buy_order_price,
                                                                 "Total Amount" : total_amount,
                                                                 "Investable Amount": investable_amounnt,
+                                                                "P & L percent":pnl_percent,
                                                                 "Time": {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
                                                             }
                                                         )

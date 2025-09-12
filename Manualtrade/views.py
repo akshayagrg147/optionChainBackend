@@ -16,6 +16,7 @@ from .logger import LOG_FILE_PATH
 
 buy_order_successful = False
 buy_order_price = 0.0
+buy_order_successful_testing = False
 
 
 class GetTradingSymbolsAndToken(APIView):
@@ -333,3 +334,236 @@ class DownloadUpstoxLogAPIView(APIView):
 class log(APIView):
     def get(self, request):
         return Response({'msg': "Happy"})
+    
+    
+class PlaceUpstoxBuyOrderAPIViewTesting(APIView):
+    def fetch_upstox_user_name(self, access_token):
+        try:
+            headers = {
+                "Authorization": f"Bearer {access_token}"
+            }
+            response = requests.get("https://api.upstox.com/v2/user/profile", headers=headers)
+            if response.status_code == 200:
+                data = response.json()
+                print(data['data']['user_name'])
+                return data['data']['user_name']
+            else:
+                write_log_to_txt(f"❌ Error fetching user name: {response.status_code} {response.text}")
+                return "Unknown User"
+        except Exception as e:
+            write_log_to_txt(f"❌ Exception while fetching user name: {str(e)}")
+            return "Unknown User"
+    
+    def post(self, request):
+        global buy_order_successful, buy_order_price
+        quantity = request.data.get("quantity")
+        instrument_token = request.data.get("instrument_token")
+        access_token = request.data.get("access_token")
+        total_amount = request.data.get("total_amount")
+        investable_amount = request.data.get('investable_amount')
+        sandbox_token = request.data.get("sandbox_token")
+        
+        user_name = self.fetch_upstox_user_name(access_token)
+        
+
+        if not quantity or not instrument_token or not access_token or not sandbox_token:
+            return Response({
+                "success": False,
+                "message": "Fields 'quantity', 'instrument_token',,'sandbox_token' and 'access_token' are required."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        order_data = {
+            "quantity": quantity,
+            "instrument_token": instrument_token,
+            "product": "I",
+            "validity": "DAY",
+            "price": 0,
+            "tag": "string",
+            "order_type": "MARKET",
+            "transaction_type": "BUY",
+            "disclosed_quantity": 0,
+            "trigger_price": 0,
+            "is_amo": False,
+            "slice": False
+        }
+
+       
+        url = "https://api-sandbox.upstox.com/v3/order/place"  #sandbox token 
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {sandbox_token}'
+        }
+
+        try:
+            response = requests.post(url, headers=headers, data=json.dumps(order_data))
+            order_response = response.json()
+            print('placed',order_response)
+
+            if order_response.get("status") == "success":
+                
+                order_id = order_response["data"]["order_ids"][0]
+                print('order_id',order_id)
+                url = f"https://api.upstox.com/v2/market-quote/ltp?instrument_key={instrument_token}"
+                
+                headers = {
+                    'Accept':'application/json',
+                    'Authorization' :f'Bearer {access_token}'
+                }
+                try:
+                    response = requests.get(url , headers = headers)
+                    response = response.json()
+                    print(response)
+                    if response.get("status") == "success":
+                        
+                        buy_order_successful_testing = True
+                        instrument_key = list(response["data"].keys())[0]
+                        price =response["data"][instrument_key]["last_price"]
+                        print("LTP:",price)
+                        return Response({
+                            "success": True,
+                            "message": f"Order placed successfully at price ₹{price}",
+                            "order_id": order_id,
+                            "price": price
+                        }, status=200)
+                except Exception as e:
+                    return Response({
+                        "success": False,
+                        "error": str(e)
+                    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        except requests.exceptions.RequestException as e:
+            return Response({
+                "success": False,
+                "error": str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+
+class PlaceUpstoxSellOrderAPIViewTesting(APIView):
+    def fetch_upstox_user_name(self, access_token):
+        try:
+            headers = {
+                "Authorization": f"Bearer {access_token}"
+            }
+            response = requests.get("https://api.upstox.com/v2/user/profile", headers=headers)
+            if response.status_code == 200:
+                data = response.json()
+                return data['data']['user_name']
+            else:
+                print(f"❌ Error fetching user name: {response.status_code} {response.text}")
+                return "Unknown User"
+        except Exception as e:
+            print(f"❌ Exception while fetching user name: {str(e)}")
+            return "Unknown User"
+    def post(self, request):
+        global buy_order_successful, buy_order_price
+        quantity = request.data.get("quantity")
+        instrument_token = request.data.get("instrument_token")
+        access_token = request.data.get("access_token")
+        total_amount = request.data.get("total_amount")
+        investable_amount = request.data.get('investable_amount')
+        sandbox_token = request.data.get("sandbox_token")
+        
+        user_name = self.fetch_upstox_user_name(access_token)
+
+
+        if not quantity or not instrument_token or not access_token:
+            return Response({
+                "success": False,
+                "message": "Fields 'quantity', 'instrument_token', and 'access_token' are required."
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+        if not buy_order_successful_testing: 
+            return Response({
+                "success": False,
+                "message": "You haven't placed a successful buy order yet."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        order_data = {
+            "quantity": quantity,
+            "instrument_token": instrument_token,
+            "product": "I",
+            "validity": "DAY",
+            "price": 0,
+            "tag": "string",
+            "order_type": "MARKET",
+            "transaction_type": "SELL",  
+            "disclosed_quantity": 0,
+            "trigger_price": 0,
+            "is_amo": False,
+            "slice": False
+        }
+
+        url =  "https://api-sandbox.upstox.com/v3/order/place"
+        
+        
+        
+        
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {sandbox_token}'
+        }
+
+        try:
+            response = requests.post(url, headers=headers, data=json.dumps(order_data))
+            response_data = response.json()
+            print(response_data)
+
+            if response_data.get("status") == "success":
+            
+                order_id = response_data["data"]["order_ids"][0]
+                
+                url = f"https://api.upstox.com/v2/market-quote/ltp?instrument_key={instrument_token}"
+                
+                headers = {
+                    'Accept':'application/json',
+                    'Authorization' :f'Bearer {access_token}'
+                }
+                try:
+                    response = requests.get(url , headers = headers)
+                    response = response.json()
+                    print(response)
+                    if response.get("status") == "success":
+                        instrument_key = list(response["data"].keys())[0]
+                        price =response["data"][instrument_key]["last_price"]
+                        sell_price = float(price)
+                        if buy_order_price and buy_order_price != 0:
+                            pnl_percent = ((sell_price - buy_order_price) / buy_order_price) * 100
+                            pnl_percent = round(pnl_percent, 2)
+                        else:
+                            pnl_percent = 0.0
+                        buy_order_successful_testing = False
+                        
+
+                        return Response({
+                            "success": True,
+                            "message": f"Sell order placed successfully at price ₹{price}",
+                            "order_id": order_id,
+                            'pnl-percent':pnl_percent,
+                            "price": price
+                        }, status=200)
+                        
+                except Exception as e:
+                    return Response({
+                        "success": False,
+                        "error": str(e)
+                    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        except requests.exceptions.RequestException as e:
+            return Response({
+                "success": False,
+                "error": str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                
+           
+                        
+                    

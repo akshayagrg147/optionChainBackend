@@ -14,7 +14,8 @@ from kiteconnect import KiteConnect, KiteTicker
 import pandas as pd
 import threading
 import re
-
+import traceback
+import websocket as _websocket_client   # for debug trace
 
 
 class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
@@ -22,6 +23,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
         super().__init__(*args, **kwargs)
         self.kite = None
         self.kws = None
+        self.loop = None
         self.reset_trade_flags()
         
     def reset_trade_flags(self):
@@ -43,8 +45,6 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
         self.pe_reverse_token = None
         self.index_name = "NIFTY"  # Default index
         self.instruments_cache = None
-        
-  
         
     def fetch_zerodha_user_name(self, api_key, access_token):
         try:
@@ -74,15 +74,11 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             print("❌ KiteConnect not initialized")
             return {"CE": None, "PE": None}
         
-        # Load instruments from Zerodha
         instruments = self.get_instruments()
         if not instruments:
             return {"CE": None, "PE": None}
         
-        # Clean up the input symbol
         clean_symbol = trading_symbol_input.replace(" ", "").upper()
-        
-        # Try to find exact match first
         result = {"CE": None, "PE": None}
         
         for instrument in instruments:
@@ -95,9 +91,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                     print(f"✅ PE Exact match found: {instrument['tradingsymbol']}, Token: {result['PE']}")
                 break
         
-        # If we found one option type, try to find the opposite
         if result["CE"] or result["PE"]:
-            # Extract strike price and expiry from the found instrument
             found_instrument = None
             for instrument in instruments:
                 if instrument['instrument_token'] == (result["CE"] or result["PE"]):
@@ -105,9 +99,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                     break
             
             if found_instrument:
-                # Find the opposite option type with same strike and expiry
                 opposite_type = "PE" if found_instrument['instrument_type'] == "CE" else "CE"
-                
                 for instrument in instruments:
                     if (instrument['strike'] == found_instrument['strike'] and
                         instrument['expiry'] == found_instrument['expiry'] and
@@ -127,12 +119,19 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
     async def connect(self):
         await self.accept()
         self.keep_running = True
-        print("✅ WebSocket connection established")
+        try:
+            self.loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self.loop = asyncio.get_event_loop()
+        print("✅ WebSocket connection established (consumer loop stored)")
 
     async def disconnect(self, close_code):
         self.keep_running = False
         if self.kws:
-            self.kws.close()
+            try:
+                self.kws.close()
+            except Exception as e:
+                print("Error closing kws:", e)
         print("🔌 WebSocket connection closed")
 
     async def receive(self, text_data):
@@ -144,13 +143,12 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             access_token = payload.get('access_token')
             trading_symbol = payload.get('trading_symbol')
             trading_symbol_2 = payload.get('trading_symbol_2')
-            self.index_name = payload.get('index_name', 'NIFTY')  # Get index name from payload
+            self.index_name = payload.get('index_name', 'NIFTY')
             
             if not api_key or not access_token or not trading_symbol:
                 await self.send(text_data=json.dumps({'error': 'Missing required fields: api_key, access_token, trading_symbol'}))
                 return
                 
-            # Initialize KiteConnect
             try:
                 self.kite = KiteConnect(api_key=api_key)
                 self.kite.set_access_token(access_token)
@@ -159,12 +157,11 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 await self.send(text_data=json.dumps({'error': f'KiteConnect initialization failed: {str(e)}'}))
                 return
 
-            # Test the connection with a simple API call
             try:
                 profile = self.kite.profile()
                 print(f"✅ Authentication successful for user: {profile.get('user_name', 'Unknown')}")
             except Exception as e:
-                await self.send(text_data=json.dumps({'error': f'Authentication failed: {str(e)}. Please check your API key and access token.'}))
+                await self.send(text_data=json.dumps({'error': f'Authentication failed: {str(e)}'}))
                 return
 
             asyncio.create_task(self.fetch_and_stream_data(trading_symbol, trading_symbol_2))
@@ -174,11 +171,9 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
 
     async def fetch_and_stream_data(self, trading_symbol, trading_symbol_2):
         try:
-            # Get spot token based on index name
             nse_instruments = self.kite.instruments("NSE")
             self.nifty_token = None
             
-            # Map index names to their tradingsymbol values
             index_map = {
                 "NIFTY": "NIFTY 50",
                 "BANKNIFTY": "NIFTY BANK",
@@ -198,13 +193,11 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 return
             print(f"✅ {self.index_name} token found: {self.nifty_token}")
 
-            # Get instrument tokens
             ce_tokens = self.get_instrument_tokens_by_trading_symbol(trading_symbol, self.index_name)
             
             if trading_symbol_2:
                 pe_tokens = self.get_instrument_tokens_by_trading_symbol(trading_symbol_2, self.index_name)
             else:
-                # If only one symbol provided, find its opposite
                 pe_tokens = {"CE": None, "PE": None}
                 if ce_tokens["CE"]:
                     pe_tokens["PE"] = ce_tokens["PE"]
@@ -230,89 +223,90 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
 
             print(f"📡 Subscribing to tokens: {tokens}")
 
-            # Initialize KiteTicker with proper authentication
+            _websocket_client.enableTrace(True)
+
             try:
-                self.kws = KiteTicker(
-                    api_key=self.kite.api_key, 
-                    access_token=self.kite.access_token
-                )
-                print("✅ KiteTicker initialized successfully")
+                self.kws = KiteTicker(self.kite.api_key, self.kite.access_token)
+                print("✅ KiteTicker object created")
             except Exception as e:
-                error_msg = f"❌ KiteTicker initialization failed: {str(e)}"
+                error_msg = f"❌ KiteTicker object creation failed: {str(e)}"
                 print(error_msg)
                 await self.send(text_data=json.dumps({'error': error_msg}))
                 return
 
+            def safe_send_json(payload):
+                if self.loop:
+                    fut = asyncio.run_coroutine_threadsafe(
+                        self.send(text_data=json.dumps(payload)), self.loop
+                    )
+                    try:
+                        fut.result(timeout=3)
+                    except Exception:
+                        print("❌ Failed to send JSON payload to client")
+
             def on_ticks(ws, ticks):
-                # Process ticks in a thread-safe way
-                asyncio.run_coroutine_threadsafe(self.process_ticks(ticks), asyncio.get_event_loop())
+                try:
+                    asyncio.run_coroutine_threadsafe(self.process_ticks(ticks), self.loop)
+                except Exception:
+                    print("❌ Error scheduling process_ticks:", traceback.format_exc())
 
             def on_connect(ws, response):
                 print("✅ Connected to Zerodha WebSocket")
-                # Subscribe to tokens
-                ws.subscribe(tokens)
-                ws.set_mode(ws.MODE_FULL, tokens)
-                print(f"✅ Subscribed to {len(tokens)} instruments")
+                try:
+                    ws.subscribe(tokens)
+                    ws.set_mode(ws.MODE_FULL, tokens)
+                    print(f"✅ Subscribed to {len(tokens)} instruments")
+                    safe_send_json({'info': 'Subscribed to tokens', 'tokens': tokens})
+                except Exception:
+                    print("❌ Subscribe failure:", traceback.format_exc())
+                    safe_send_json({'error': 'Subscribe failed'})
 
             def on_error(ws, code, reason):
-                error_msg = f"❌ WebSocket Error: {code} - {reason}"
-                print(error_msg)
-                # Use the main event loop to send the error
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                loop.run_until_complete(self.send(text_data=json.dumps({'error': error_msg})))
-                loop.close()
+                msg = f"❌ WebSocket Error: {code} - {reason}"
+                print(msg)
+                print(traceback.format_exc())
+                safe_send_json({'error': msg})
 
             def on_close(ws, code, reason):
-                close_msg = f"🔌 WebSocket Closed: {code} - {reason}"
-                print(close_msg)
-                # Use the main event loop to send the close message
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                loop.run_until_complete(self.send(text_data=json.dumps({'info': close_msg})))
-                loop.close()
+                msg = f"🔌 WebSocket Closed: {code} - {reason}"
+                print(msg)
+                safe_send_json({'info': msg})
 
             def on_reconnect(ws, attempts_count):
-                reconnect_msg = f"🔁 Reconnecting to WebSocket, attempt {attempts_count}"
-                print(reconnect_msg)
-                # Use the main event loop to send the reconnect message
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                loop.run_until_complete(self.send(text_data=json.dumps({'info': reconnect_msg})))
-                loop.close()
+                msg = f"🔁 Reconnecting to WebSocket, attempt {attempts_count}"
+                print(msg)
+                safe_send_json({'info': msg})
 
-            # Assign callbacks
             self.kws.on_ticks = on_ticks
             self.kws.on_connect = on_connect
             self.kws.on_error = on_error
             self.kws.on_close = on_close
             self.kws.on_reconnect = on_reconnect
 
-            # Connect in a separate thread
-            def run_websocket():
+            def run_websocket_thread():
                 try:
-                    # Connect without the reconnect parameter
                     self.kws.connect(threaded=True)
                 except Exception as e:
-                    error_msg = f"❌ WebSocket connection failed: {str(e)}"
-                    print(error_msg)
-                    # Use the main event loop to send the error
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    loop.run_until_complete(self.send(text_data=json.dumps({'error': error_msg})))
-                    loop.close()
-                
-            ws_thread = threading.Thread(target=run_websocket)
+                    print("❌ WebSocket thread connect exception:", str(e))
+                    print(traceback.format_exc())
+                    try:
+                        print("Attempting fallback non-threaded connect...")
+                        self.kws.connect(threaded=False)
+                    except Exception as e2:
+                        print("❌ Fallback connect failed:", str(e2))
+                        safe_send_json({'error': f'WS connect failed: {str(e)} / {str(e2)}'})
+
+            ws_thread = threading.Thread(target=run_websocket_thread, name="KiteTickerThread")
             ws_thread.daemon = True
             ws_thread.start()
 
-            # Keep the connection alive
             while self.keep_running:
                 await asyncio.sleep(1)
 
         except Exception as e:
             error_msg = f'Stream setup failed: {str(e)}'
             print(error_msg)
+            print(traceback.format_exc())
             await self.send(text_data=json.dumps({'error': error_msg}))
 
     async def process_ticks(self, ticks):
@@ -326,7 +320,6 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             oi = tick.get('oi', 0)
             change = tick.get('change', 0)
             
-            # For spot price (Index)
             if instrument_token == self.nifty_token:
                 self.latest_spot_price = ltp
                 result = {
@@ -342,7 +335,6 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 await self.send(text_data=json.dumps(result))
                 continue
             
-            # Determine instrument type
             instrument_type = "UNKNOWN"
             if instrument_token == self.ce_token:
                 instrument_type = "CE"
@@ -353,7 +345,6 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             elif instrument_token == self.pe_reverse_token:
                 instrument_type = "PE_REVERSE"
                 
-            # Process the tick data
             result = {
                 'type': instrument_type,
                 'instrument_token': instrument_token,
@@ -365,6 +356,4 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 'index_name': self.index_name,
                 'change': change
             }
-
-            # Send data to WebSocket client
             await self.send(text_data=json.dumps(result))
