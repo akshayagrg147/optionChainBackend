@@ -1,0 +1,31 @@
+2025-09-11 14:02:09,610 | INFO | 
+==================== KUMAR ANSHUL SINGH | ✅ Buy Order Placed ====================
+Token_Purchase: NSE_FO|44868
+Market Value: 25010.65
+BUY LTP: 0.95
+Total Amount: 500000
+Investable Amount: 100000
+Time: {'2025-09-11 14:02:09'}
+------------------------------------------------------------
+2025-09-11 14:02:11,081 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-09-11 14:07:28,296 | INFO | 
+==================== KUMAR ANSHUL SINGH | ✅ Buy Order Placed ====================
+Token_Purchase: NSE_FO|44868
+Market Value: 25009.8
+BUY LTP: 0.95
+Total Amount: 500000
+Investable Amount: 100000
+Time: {'2025-09-11 14:07:28'}
+------------------------------------------------------------
+2025-09-11 14:07:28,857 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
+2025-09-11 14:07:29,436 | INFO | 
+==================== KUMAR ANSHUL SINGH | ✅ SELL Order Placed ====================
+Token_Purchase: NSE_FO|44868
+Market Value: 25009.8
+BUY LTP: 0.9
+Total Amount: 500000
+Investable Amount: 100000
+PNL percent: -5.26
+Time: {'2025-09-11 14:07:29'}
+------------------------------------------------------------
+2025-09-11 14:07:29,659 | INFO | ✅ Log uploaded to s3://logs-trading-v2/logs/websocket_stream.log
