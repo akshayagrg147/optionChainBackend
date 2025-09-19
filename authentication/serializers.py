@@ -13,7 +13,7 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ('email', 'password', 'confirm_password')
+        fields = ('email', 'password', 'confirm_password', 'first_name', 'last_name')
         extra_kwargs = {
             'password': {
                 'write_only': True,
@@ -23,6 +23,12 @@ class RegisterSerializer(serializers.ModelSerializer):
             'email': {
                 'required': True,
                 'validators': [UniqueValidator(queryset=User.objects.all())]
+            },
+            'first_name': {
+                'required': True
+            },
+            'last_name': {
+                'required': True
             }
         }
 
@@ -35,7 +41,9 @@ class RegisterSerializer(serializers.ModelSerializer):
         validated_data.pop('confirm_password')
         user = User.objects.create(
             email=validated_data['email'],
-            username=validated_data['email'], 
+            username=validated_data['email'],
+            first_name=validated_data['first_name'],
+            last_name=validated_data['last_name']
         )
         user.set_password(validated_data['password'])
         user.save()
@@ -45,4 +53,4 @@ class RegisterSerializer(serializers.ModelSerializer):
 class LoginSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ('id', 'email', 'full_name')
+        fields = ('id', 'email', 'first_name', 'last_name')
