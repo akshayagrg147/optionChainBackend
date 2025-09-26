@@ -13,6 +13,11 @@ from .logger import write_log_to_txt
 from datetime import datetime
 from .utils import fetch_order_status
 from .logger import LOG_FILE_PATH
+import re
+from collections import defaultdict
+from django.http import FileResponse
+from rest_framework.renderers import JSONRenderer
+
 
 buy_order_successful = False
 buy_order_price = 0.0
@@ -553,17 +558,181 @@ class PlaceUpstoxSellOrderAPIViewTesting(APIView):
                 "success": False,
                 "error": str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+   
+
+    def get(self, request):
+        if not os.path.exists(LOG_FILE_PATH):
+            return Response({"error": "Log file not found"}, status=404)
+        
+        user_orders = defaultdict(lambda: {"buy": [], "sell": []})
+
+        try:
+            with open(LOG_FILE_PATH, "r") as f:
+                lines = f.readlines()
             
+            # Corrected regex patterns
+            buy_pattern = re.compile(
+                r"(?P<time>[\d-]+\s[\d:]+) - ✅ BUY ORDER PLACED \|  User:(?P<user>[^,]+) , Quantity: (?P<qty>\d+), \| Token: (?P<token>[^,]+), BUY IN LTP: (?P<buy_ltp>[\d.]+), Total Amount: (?P<total>[^,]+) , Investable Amount: (?P<investable>[^|]+) \| Time: .+"
+            )
+            sell_pattern = re.compile(
+                r"(?P<time>[\d-]+\s[\d:]+) - ✅ SELL ORDER PLACED \| User: (?P<user>[^|]+) \| Qty: (?P<qty>\d+) \| Token: (?P<token>[^|]+) \| SELL IN LTP: ₹?(?P<sell_ltp>[\d.]+) \|PnL: (?P<pnl>[-\d.]+%) \| Total Amount: (?P<total>[^|]+) \| Investable Amount: (?P<investable>[^|]+)\| Time: .+"
+            )
+            
+            for line in lines:
+                line = line.strip()
+                buy_match = buy_pattern.match(line)
+                sell_match = sell_pattern.match(line)
                 
-                
-                
-                
-                
-                
-                
+                if buy_match:
+                    data = buy_match.groupdict()
+                    user_orders[data["user"].strip()]["buy"].append(data)
+                elif sell_match:
+                    data = sell_match.groupdict()
+                    user_orders[data["user"].strip()]["sell"].append(data)
+
+            csv_file_path = os.path.join(settings.BASE_DIR, "upstox_orders.csv")
+            with open(csv_file_path, "w", newline="") as csvfile:
+                fieldnames = [
+                    "User",
+                    "Buy Time", "Buy Quantity", "Buy Token", "Buy LTP", "Buy Total Amount", "Buy Investable Amount",
+                    "Sell Time", "Sell Quantity", "Sell Token", "Sell LTP", "PnL", "Sell Total Amount", "Sell Investable Amount"
+                ]
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+
+                for user, orders in user_orders.items():
+                    row = {"User": user}
+                    
+                    if orders["buy"]:
+                        buy_order = orders["buy"][0]
+                        row.update({
+                            "Buy Time": buy_order["time"],
+                            "Buy Quantity": buy_order["qty"],
+                            "Buy Token": buy_order["token"],
+                            "Buy LTP": buy_order["buy_ltp"],
+                            "Buy Total Amount": buy_order["total"],
+                            "Buy Investable Amount": buy_order["investable"]
+                        })
+                    if orders["sell"]:
+                        sell_order = orders["sell"][0]
+                        row.update({
+                            "Sell Time": sell_order["time"],
+                            "Sell Quantity": sell_order["qty"],
+                            "Sell Token": sell_order["token"],
+                            "Sell LTP": sell_order["sell_ltp"],
+                            "PnL": sell_order["pnl"],
+                            "Sell Total Amount": sell_order["total"],
+                            "Sell Investable Amount": sell_order["investable"]
+                        })
+                    
+                    writer.writerow(row)
+
+            return FileResponse(open(csv_file_path, 'rb'), as_attachment=True, filename="upstox_orders.csv")
+        
+        except Exception as e:
+            return Response({"error": f"Failed to generate CSV: {str(e)}"}, status=500)
                 
                 
                 
            
-                        
-                    
+import os
+import csv
+import re
+from collections import defaultdict
+from django.http import FileResponse
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.renderers import JSONRenderer
+from django.conf import settings
+
+# Path to your log file
+
+class DownloadUpstoxCSVAPIView(APIView):
+    """
+    API to convert upstox_orders.txt log into CSV and download it.
+    """
+    renderer_classes = [JSONRenderer]  # Ensures error responses are JSON, no HTML template needed
+
+    def get(self, request, *args, **kwargs):
+        if not os.path.exists(LOG_FILE_PATH):
+            return Response({"error": "Log file not found"}, status=404)
+
+        user_orders = defaultdict(lambda: {"buy": [], "sell": []})
+
+        try:
+            # Read log lines
+            with open(LOG_FILE_PATH, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+
+            # Improved regex patterns to match log entries
+            buy_pattern = re.compile(
+    r"(?P<time>[\d-]+\s[\d:]+)\s+-\s+✅ BUY ORDER PLACED \|\s*User:\s*(?P<user>.+?)\s*,\s*Quantity:\s*(?P<qty>\d+),\s*\|\s*Token:\s*(?P<token>[^,]+),\s*BUY IN LTP:\s*₹?(?P<buy_ltp>[\d.]+),\s*Total Amount:\s*(?P<total>[^,]+)\s*,\s*Investable Amount:\s*(?P<investable>[^|]+)\s*\|"
+            )
+
+            sell_pattern = re.compile(
+                r"(?P<time>[\d-]+\s[\d:]+)\s+-\s+✅ SELL ORDER PLACED \|\s*User:\s*(?P<user>.+?)\s*\|\s*Qty:\s*(?P<qty>\d+)\s*\|\s*Token:\s*(?P<token>.+?)\s*\|\s*SELL IN LTP:\s*₹?(?P<sell_ltp>[\d.]+)\s*\|PnL:\s*(?P<pnl>[-\d.]+%)\s*\| Total Amount:\s*(?P<total>.+?)\s*\| Investable Amount:\s*(?P<investable>.+?)\s*\|"
+            )
+
+            # Parse log lines
+            for line in lines:
+                line = line.strip()
+                buy_match = buy_pattern.match(line)
+                sell_match = sell_pattern.match(line)
+
+                if buy_match:
+                    data = buy_match.groupdict()
+                    user_orders[data["user"].strip()]["buy"].append(data)
+                elif sell_match:
+                    data = sell_match.groupdict()
+                    user_orders[data["user"].strip()]["sell"].append(data)
+
+           
+            csv_file_path = os.path.join(settings.BASE_DIR,"upstox_orders.csv")
+            with open(csv_file_path, "w", newline="", encoding="utf-8") as csvfile:
+                fieldnames = [
+                    "User",
+                    "Buy Time", "Buy Quantity", "Buy Token", "Buy LTP", "Buy Total Amount", "Buy Investable Amount",
+                    "Sell Time", "Sell Quantity", "Sell Token", "Sell LTP", "PnL", "Sell Total Amount", "Sell Investable Amount"
+                ]
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+
+                for user, orders in user_orders.items():
+                    row = {"User": user}
+
+                    # Take first BUY order if exists
+                    if orders["buy"]:
+                        buy_order = orders["buy"][0]
+                        row.update({
+                            "Buy Time": buy_order["time"],
+                            "Buy Quantity": buy_order["qty"],
+                            "Buy Token": buy_order["token"],
+                            "Buy LTP": buy_order["buy_ltp"],
+                            "Buy Total Amount": buy_order["total"],
+                            "Buy Investable Amount": buy_order["investable"]
+                        })
+
+                    # Take first SELL order if exists
+                    if orders["sell"]:
+                        sell_order = orders["sell"][0]
+                        row.update({
+                            "Sell Time": sell_order["time"],
+                            "Sell Quantity": sell_order["qty"],
+                            "Sell Token": sell_order["token"],
+                            "Sell LTP": sell_order["sell_ltp"],
+                            "PnL": sell_order["pnl"],
+                            "Sell Total Amount": sell_order["total"],
+                            "Sell Investable Amount": sell_order["investable"]
+                        })
+
+                    writer.writerow(row)
+
+            # Return CSV as download
+            return FileResponse(
+                open(csv_file_path, "rb"),
+                as_attachment=True,
+                filename="upstox_orders.csv"
+            )
+
+        except Exception as e:
+            return Response({"error": f"Failed to generate CSV: {str(e)}"}, status=500)

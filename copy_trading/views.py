@@ -16,6 +16,7 @@ import os
 import json
 import datetime
 import time
+from .setup_log import LOG_FILE
 
 class OptionChainAPIView(APIView):
     authentication_classes = []            
@@ -429,7 +430,7 @@ class UploadCSVView(APIView):
         if not uploaded_file:
             return Response({'error': 'No file provided'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Always save with the name 'nse.csv'
+        
         save_path = os.path.join(settings.BASE_DIR, 'nse.csv')
 
         try:
@@ -441,3 +442,18 @@ class UploadCSVView(APIView):
 
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+from django.http import FileResponse, Http404
+
+class DownloadLogFileAPIView(APIView):
+     
+
+    def get(self, request):
+        if not os.path.exists(LOG_FILE):
+            raise Http404("Log file not found.")
+        
+        # Open the file in binary mode
+        response = FileResponse(open(LOG_FILE, 'rb'), content_type='text/plain')
+        response['Content-Disposition'] = f'attachment; filename="{os.path.basename(LOG_FILE)}"'
+        return response

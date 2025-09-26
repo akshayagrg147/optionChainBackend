@@ -15,4 +15,5 @@ urlpatterns = [
                path('api/get-tradingsymbol/', GetTradingSymbol.as_view(), name='get_trading_symbol'),
                path('api/get-tradingsymbolcsv/', GetTradingSymbolsCSV.as_view(), name='get_trading_symbol'),
                path('api/upload-nse-csv/', UploadCSVView.as_view(), name='upload-nse-csv'),
+               path('api/download-log/', DownloadLogFileAPIView.as_view(), name='download-log'),
 ]

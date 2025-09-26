@@ -21,6 +21,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('',include('copy_trading.urls')),
     path('auth/',include('authentication.urls')),
-    path('ManualTrade/',include('Manualtrade.urls'))
+    path('ManualTrade/',include('Manualtrade.urls')),
+    path('Zerodha/',include('ZerodhaManualTrade.urls')),
 ]
 

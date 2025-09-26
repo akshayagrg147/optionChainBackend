@@ -1,1 +1,2 @@
-2025-09-12 09:31:57 - ❌ Error fetching user name: 401 {"status":"error","errors":[{"errorCode":"UDAPI100050","message":"Invalid token used to access API","propertyPath":null,"invalidValue":null,"error_code":"UDAPI100050","property_path":null,"invalid_value":null}]}
+2025-08-26 13:08:53 -  ✅ BUY ORDER PLACED |  User:Kumar Anshul Singh , Quantity: 75, | Token: NSE_FO|71706, BUY IN LTP: 0.8, Total Amount: None , Investable Amount: None | Time: 2025-08-26 13:08:53
+2025-08-26 13:09:07 - ✅ SELL ORDER PLACED | User: Kumar Anshul Singh | Qty: 75 | Token: NSE_FO|71706 | SELL IN LTP: ₹0.75 |PnL: -6.25% | Total Amount: None | Investable Amount: None| Time: 2025-08-26 13:09:07

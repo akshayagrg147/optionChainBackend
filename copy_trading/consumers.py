@@ -43,6 +43,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
             response = requests.get("https://api.upstox.com/v2/user/profile", headers=headers)
             if response.status_code == 200:
                 data = response.json()
+                print(data['data']['user_name'])
                 
                 return data['data']['user_name']
             else:
@@ -308,20 +309,8 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                         
                         current_str = current_dt.strftime("%H:%M:%S.%f")[:-3]
                         
-                        #print('current timing',current_str)
-                        
-                        
-                        # print("📡 Upstox sent LTT at: ", ltt_dt.strftime("%H:%M:%S.%f")[:-3])
-                        # print("🖥️ My system received at:", current_dt.strftime("%H:%M:%S.%f")[:-3])
-                        # print(f"⏱️ Delay from Upstox to me: {latency} ms | LTP: {ws_ltp}")
-    
-
-                        
-                        log_line = f"WebSocket LTT (ms): {ltt_int} | Human: {ltt_str} | LTP: {ws_ltp} | Latency: {latency}ms | Socket Timing :{ltt_str} | Current Timing :{current_str}\n"
-                        #print(log_line.strip()) 
-                        
-                        with open("websocket_latency_lognew2new.txt", "a") as logfile:
-                            logfile.write(log_line)
+           
+                      
                         
                         rest_ltp = ws_ltp
                        
@@ -340,6 +329,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                             
                             
                             self.account_name = self.fetch_upstox_user_name(access_token)
+
                             
                             if ik == ce_token and not self.order_placedCE and self.latest_spot_price is not None:   
                                 try:
@@ -396,6 +386,11 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                         price = detail_data["data"]["average_price"]
                                                         buy_order_price = float(price)
                                                         self.ltp_at_order = buy_order_price
+
+
+                                                        await self.send(text_data=json.dumps({
+                                                                    'message': 'Order placed successfully...Waiting for square off',
+                                                                }))
                                                         
                                                         log_order_event(
                                                             self.account_name,
@@ -410,17 +405,10 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                             }
                                                         )
     
-                                                        await self.send(text_data=json.dumps({
-                                                                    'message': 'Order placed successfully...Waiting for square off',
-                                                                    'Token_Purchase': self.buy_token,
-                                                                    'Market Value': self.latest_spot_price,
-                                                                    'BUY LTP': buy_order_price,
-                                                                    "Total Amount" : total_amount,
-                                                                    "Investable Amount": investable_amounnt,
-                                                                    "Time": {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-                                                                }))
+                                                        
 
                                                     else:
+                                                        print('in error ')
                                                         error_message = detail_data["data"]["status_message"]
                                                        
                                                         log_order_event(
@@ -432,22 +420,31 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                         )
 
                                                         await self.send(text_data=json.dumps({
-                                                                    'message': 'Order Failed'
-                                                                    
+                                                                    'message': 'Order Failed'    
                                                                 }))
 
+                                                else:
+                                                    print('inthis')
+                                                    await self.send(text_data=json.dumps({
+                                                                        'message': 'Order Failed'
+                                                                        
+                                                                    }))
+                                                    
                                             else:
+                                                print('inanother this ')
                                                 await self.send(text_data=json.dumps({
-                                                                    'message': 'Order Failed'
-                                                                    
-                                                                }))
+                                                                        'message': 'Order Failed'
+                                                                        
+                                                                    }))
 
                                         except requests.exceptions.RequestException as e:
+                                            print('in except this ')
                                             await self.send(text_data=json.dumps({
                                                                     'message': 'Order Failed'
                                                                     
                                                                 }))
                                 except Exception as e:
+                                    print('in exception')
                                     await self.send(text_data=json.dumps({'error': f'Order exception: {str(e)}'}))
                                                                                           
                             if not self.order_placedPE and self.latest_spot_price is not None:
@@ -499,12 +496,17 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                     if detail_data and detail_data.get("status") == "success":
                                                         order_status = detail_data["data"]["status"]
                                                         if order_status == "complete":
-                                                            self.order_placedCE  = True                                                 
+                                                                                                         
                                                             price = detail_data["data"]["average_price"]
                                                             buy_order_price = float(price)
                                                             self.ltp_at_order = buy_order_price
                                                             self.order_placedPE  = True
                                                             self.order_placedCE  = True
+
+
+                                                            await self.send(text_data=json.dumps({
+                                                                        'message': 'Order placed successfully...Waiting for square off',
+                                                                    }))
                                                             
                                                             
                                                             log_order_event(
@@ -520,15 +522,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                                 }
                                                             )
         
-                                                            await self.send(text_data=json.dumps({
-                                                                        'message': 'Order placed successfully...Waiting for square off',
-                                                                        'Token_Purchase': self.buy_token,
-                                                                        'Market Value': self.latest_spot_price,
-                                                                        'BUY LTP': buy_order_price,
-                                                                        "Total Amount" : total_amount,
-                                                                        "Investable Amount": investable_amounnt,
-                                                                        "Time": {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-                                                                    }))
+                                                            
 
                                                         else:
                                                             error_message = detail_data["data"]["status_message"]
@@ -540,27 +534,33 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                                     "Error": {error_message}
                                                                 }
                                                             )
+                                                            print("in pe first ")
 
                                                             await self.send(text_data=json.dumps({
+                                                               
                                                                         'message': 'Order Failed',
                                                                         
                                                                     }))
 
                                                 else:
+                                                    print("in pe 2 ")
                                                     await self.send(text_data=json.dumps({
                                                                         'message': 'Order Failed',
                                                                         
                                                                     }))
-
+                                                    
+                                            
                                             except requests.exceptions.RequestException as e:
+                                                print("in pe 3 ")
                                                 await self.send(text_data=json.dumps({
                                                                         'message': 'Order Failed',
                                                                         
                                                                     }))     
                                      
                                             
-                                         
+                                   
                                 except Exception as e:
+                                    print('in pe exception 4')
                                     await self.send(text_data=json.dumps({'error': f'Order exception: {str(e)}'}))
                             
                             
@@ -649,12 +649,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
     
                                                         await self.send(text_data=json.dumps({
                                                                     'message': 'SELL Order placed successfully',
-                                                                    'Token_Purchase': self.buy_token,
-                                                                    'Market Value': self.latest_spot_price,
-                                                                    'BUY LTP': buy_order_price,
-                                                                    "Total Amount" : total_amount,
-                                                                    "Investable Amount": investable_amounnt,
-                                                                    'order_datetime': order_timestamp
+                                                                   
                                                                 }))
 
                                                     else:
@@ -783,12 +778,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
         
                                                             await self.send(text_data=json.dumps({
                                                                         'message': 'Reverse Order placed successfully...Waiting for square off',
-                                                                        'Token_Purchase': self.reverse_token,
-                                                                        'Market Value': self.latest_spot_price,
-                                                                        'BUY LTP': buy_order_price,
-                                                                        "Total Amount" : total_amount,
-                                                                        "Investable Amount": investable_amounnt,
-                                                                        "Time": {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+                                                        
                                                                             
                                                                     }))
                                                             
