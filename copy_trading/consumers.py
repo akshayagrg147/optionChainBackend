@@ -378,7 +378,9 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                             if order_response.get("status") == "success":                                                
                                                 order_id = order_response["data"]["order_ids"][0]
                                                 print('order_id',order_id)
-                                                detail_data = fetch_order_status(order_id, access_token)
+                                                detail_data = await asyncio.get_event_loop().run_in_executor(
+                                                                        None, fetch_order_status, order_id, access_token
+     )
                                                 if detail_data and detail_data.get("status") == "success":
                                                     order_status = detail_data["data"]["status"]
                                                     if order_status == "complete":
