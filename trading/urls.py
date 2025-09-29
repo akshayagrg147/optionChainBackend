@@ -22,6 +22,6 @@ urlpatterns = [
     path('',include('copy_trading.urls')),
     path('auth/',include('authentication.urls')),
     path('ManualTrade/',include('Manualtrade.urls')),
-    path('Zerodha/',include('ZerodhaManualTrade.urls')),
+    #path('Zerodha/',include('ZerodhaManualTrade.urls')),
 ]
 
