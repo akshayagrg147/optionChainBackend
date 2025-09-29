@@ -14,15 +14,12 @@ def fetch_order_status(order_id, access_token, interval=1):
             resp = requests.get(details_url, headers=headers)
             data = resp.json()
             print(f"🔄 Polling order status: {data}")
-
             if data.get("status") == "success":
                 order_status = data["data"]["status"]
                 print(order_status)
 
-          
                 if order_status in ["complete", "cancelled", "rejected", "failed"]:
                     return data
-
             else:
                 return data  
 

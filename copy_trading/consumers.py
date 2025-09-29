@@ -380,18 +380,14 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                 if detail_data and detail_data.get("status") == "success":
                                                     order_status = detail_data["data"]["status"]
                                                     if order_status == "complete":
-                                                      
                                                         self.order_placedPE  = True
                                                         self.order_placedCE  = True                                                
                                                         price = detail_data["data"]["average_price"]
                                                         buy_order_price = float(price)
                                                         self.ltp_at_order = buy_order_price
-
-
                                                         await self.send(text_data=json.dumps({
                                                                     'message': 'Order placed successfully...Waiting for square off',
-                                                                }))
-                                                        
+                                                                })) 
                                                         log_order_event(
                                                             self.account_name,
                                                             "✅ Buy Order Placed",
@@ -404,9 +400,6 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                                 "Time": {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
                                                             }
                                                         )
-    
-                                                        
-
                                                     else:
                                                         print('in error ')
                                                         error_message = detail_data["data"]["status_message"]
@@ -418,31 +411,22 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                                 "Error": {error_message}
                                                             }
                                                         )
-
                                                         await self.send(text_data=json.dumps({
                                                                     'message': 'Order Failed'    
                                                                 }))
-
                                                 else:
                                                     print('inthis')
-                                                    await self.send(text_data=json.dumps({
-                                                                        'message': 'Order Failed'
-                                                                        
-                                                                    }))
-                                                    
+                                                   
                                             else:
                                                 print('inanother this ')
                                                 await self.send(text_data=json.dumps({
-                                                                        'message': 'Order Failed'
-                                                                        
-                                                                    }))
+                                                                        'message': 'Order Failed'}))
 
                                         except requests.exceptions.RequestException as e:
                                             print('in except this ')
                                             await self.send(text_data=json.dumps({
                                                                     'message': 'Order Failed'
-                                                                    
-                                                                }))
+                                                                     }))
                                 except Exception as e:
                                     print('in exception')
                                     await self.send(text_data=json.dumps({'error': f'Order exception: {str(e)}'}))
@@ -526,7 +510,6 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
 
                                                         else:
                                                             error_message = detail_data["data"]["status_message"]
-                                                        
                                                             log_order_event(
                                                                 self.account_name,
                                                                 "❌ BUY ORDER FAILED",
@@ -537,28 +520,14 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                             print("in pe first ")
 
                                                             await self.send(text_data=json.dumps({
-                                                               
+                        
                                                                         'message': 'Order Failed',
                                                                         
                                                                     }))
-
-                                                else:
-                                                    print("in pe 2 ")
-                                                    await self.send(text_data=json.dumps({
-                                                                        'message': 'Order Failed',
-                                                                        
-                                                                    }))
-                                                    
-                                            
+                                                    else:
+                                                        print("in pe 2 ")           
                                             except requests.exceptions.RequestException as e:
                                                 print("in pe 3 ")
-                                                await self.send(text_data=json.dumps({
-                                                                        'message': 'Order Failed',
-                                                                        
-                                                                    }))     
-                                     
-                                            
-                                   
                                 except Exception as e:
                                     print('in pe exception 4')
                                     await self.send(text_data=json.dumps({'error': f'Order exception: {str(e)}'}))
