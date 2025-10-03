@@ -457,3 +457,22 @@ class DownloadLogFileAPIView(APIView):
         response = FileResponse(open(LOG_FILE, 'rb'), content_type='text/plain')
         response['Content-Disposition'] = f'attachment; filename="{os.path.basename(LOG_FILE)}"'
         return response
+    
+
+from rest_framework.response import Response
+from .models import FundInstrument
+from rest_framework.decorators import api_view, permission_classes
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_all_fund_instruments(request):
+    try:
+        count, _ = FundInstrument.objects.all().delete()
+        return Response({
+            "message": f"Successfully deleted {count} FundInstrument records."
+        })
+    except Exception as e:
+        return Response({
+            "error": str(e)
+        }, status=500)
