@@ -392,6 +392,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                         self.buy_quantity = quantityCE
                                                         await self.send(text_data=json.dumps({
                                                                     'message': 'Order placed successfully...Waiting for square off',
+                                                                    'BUY LTP': buy_order_price,
                                                                 })) 
                                                         log_order_event(
                                                             self.account_name,
@@ -499,6 +500,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
 
                                                             await self.send(text_data=json.dumps({
                                                                         'message': 'Order placed successfully...Waiting for square off',
+                                                                        'BUY LTP': buy_order_price,
                                                                     }))
                                                             
                                                             
@@ -606,7 +608,9 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                             if order_response.get("status") == "success":                                                
                                                 order_id = order_response["data"]["order_ids"][0]
                                                 print('order_id',order_id)
-                                                detail_data = fetch_order_status(order_id, access_token)
+                                                detail_data = await asyncio.get_event_loop().run_in_executor(
+                                                                        None, fetch_order_status, order_id, access_token
+                                                                    ) 
                                                 if detail_data and detail_data.get("status") == "success":
                                                     order_status = detail_data["data"]["status"]
                                                     if order_status == "complete":
@@ -631,6 +635,8 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
     
                                                         await self.send(text_data=json.dumps({
                                                                     'message': 'SELL Order placed successfully',
+                                                                    'BUY LTP': buy_order_price,
+                                                                    "P & L percent":pnl_percent,
                                                                    
                                                                 }))
 
@@ -696,6 +702,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                             print(self.ltp_at_order)
                                             self.rq = lot * (new_investable // (self.ltp_at_order * lot))
                                             quantity = self.rq
+                                            print(quantity)
                                             
 
                                             print("Executing reverse trade with token:", self.reverse_token)
@@ -722,6 +729,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                 'Content-Type': 'application/json',
                                                 'Authorization': f'Bearer {access_token}'
                                             }
+                                            self.buy_quantity = quantity
 
                                             try:
                                                 response = requests.post(url, headers=headers, data=json.dumps(order_data))
@@ -731,7 +739,9 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                 if order_response.get("status") == "success":                                                
                                                     order_id = order_response["data"]["order_ids"][0]
                                                     print('order_id',order_id)
-                                                    detail_data = fetch_order_status(order_id, access_token)
+                                                    detail_data = await asyncio.get_event_loop().run_in_executor(
+                                                                        None, fetch_order_status, order_id, access_token
+                                                                    ) 
                                                     if detail_data and detail_data.get("status") == "success":
                                                         order_status = detail_data["data"]["status"]
                                                         if order_status == "complete":
@@ -760,6 +770,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
         
                                                             await self.send(text_data=json.dumps({
                                                                         'message': 'Reverse Order placed successfully...Waiting for square off',
+                                                                        'BUY LTP': buy_order_price,
                                                         
                                                                             
                                                                     }))
@@ -771,7 +782,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                         
                                                             log_order_event(
                                                                 self.account_name,
-                                                                "❌ ReversE BUY ORDER FAILED",
+                                                                "❌ REVERSE BUY ORDER FAILED",
                                                                 {
                                                                     "Error": {error_message}
                                                                 }
