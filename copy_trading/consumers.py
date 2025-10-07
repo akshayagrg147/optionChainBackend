@@ -393,6 +393,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                         await self.send(text_data=json.dumps({
                                                                     'message': 'Order placed successfully...Waiting for square off',
                                                                     'BUY LTP': buy_order_price,
+                                                                    'Type':"CE",
                                                                 })) 
                                                         log_order_event(
                                                             self.account_name,
@@ -501,6 +502,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                             await self.send(text_data=json.dumps({
                                                                         'message': 'Order placed successfully...Waiting for square off',
                                                                         'BUY LTP': buy_order_price,
+                                                                        'Type':"PE",
                                                                     }))
                                                             
                                                             
