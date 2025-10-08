@@ -638,7 +638,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                         await self.send(text_data=json.dumps({
                                                                     'message': 'SELL Order placed successfully',
                                                                     'BUY_LTP': buy_order_price,
-                                                                    "P & L percent":pnl_percent,
+                                                                    "pnl_percentage":pnl_percent,
                                                                    
                                                                 }))
 
@@ -695,8 +695,9 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                             
                                             print('total_amount',total_amount)
                                             print('innvestable_anouut',investable_amounnt)
+                                            investable_amounnt = float(investable_amounnt)
                                             if pnl_percent > 0 :
-                                                 new_investable = investable_amounnt + (pnl_percent / 100) * investable_amounnt
+                                                new_investable = investable_amounnt + (pnl_percent / 100) * investable_amounnt
                                             else:
                                                 new_investable = investable_amounnt - (abs(pnl_percent) / 100) * investable_amounnt
                                             
