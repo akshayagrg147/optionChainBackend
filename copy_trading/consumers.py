@@ -112,6 +112,9 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
         self.toggle = True
         self.buy_token = None
         self.buy_quantity = None
+        self.buy_in_ltp = None
+        self.sell_in_ltp = None
+        self.new_invest_amount = None
         
 
     async def disconnect(self, close_code):
@@ -340,8 +343,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                         print("inside ce2")
                                         print(f'✅ In PlaceOrder Execution Block CE condition : {self.latest_spot_price}, Target: {self.target_market_priceCE}')
 
-                                        self.ltp_at_order = rest_ltp
-                                        print(self.ltp_at_order)
+                                        
                                         
                                         self.buy_token = ce_token
                                         self.reverse_token = ce_reverse_token
@@ -390,6 +392,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                         buy_order_price = float(price)
                                                         self.ltp_at_order = buy_order_price
                                                         self.buy_quantity = quantityCE
+                                                        self.buy_in_ltp = buy_order_price
                                                         await self.send(text_data=json.dumps({
                                                                     'message': 'Order placed successfully...Waiting for square off',
                                                                     'BUY_LTP': buy_order_price,
@@ -447,7 +450,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                         if ik == pe_token:
                                         
                                             print(f'✅ In PlaceOrder Execution Block PE: SPOT: {self.latest_spot_price}, Target: {self.target_market_pricePE}')
-                                            self.ltp_at_order = rest_ltp 
+                                           
                                     
                                             
                                             self.buy_token = pe_token
@@ -496,6 +499,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                             self.ltp_at_order = buy_order_price
                                                             self.order_placedPE  = True
                                                             self.order_placedCE  = True
+                                                            self.buy_in_ltp = buy_order_price
                                                             self.buy_quantity = quantityPE
 
 
@@ -577,7 +581,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                     print(f"📈 Buy: {self.ltp_at_order} | Locked SL: {self.locked_ltp} | Live LTP: {current_ltp} | P&L: {pnl_percent}%")
 
                                     if (current_ltp <= self.locked_ltp and current_ltp < self.previous_ltp) or (current_ltp < self.locked_ltp) :
-                                        self.sell_order_placed = True
+                                        
                                         print(f'Selling the token : {self.buy_token}')
   
                                         order_data = {
@@ -619,6 +623,9 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                         self.order_placedCE  = True                                                 
                                                         price = detail_data["data"]["average_price"]
                                                         buy_order_price = float(price)
+                                                        self.sell_in_ltp = buy_order_price
+                                                        PnL = round(((self.sell_in_ltp - self.buy_in_ltp) / self.buy_in_ltp) * 100, 2)
+                                                        self.sell_order_placed = True
                                                         
                                                         log_order_event(
                                                             self.account_name,
@@ -626,11 +633,11 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                             {
                                                                 'Token_Purchase': self.buy_token,
                                                                 'Market Value': self.latest_spot_price,
-                                                                'BUY LTP': buy_order_price,
+                                                                'SELL LTP': buy_order_price,
                                                                 'Quantity' : self.buy_quantity,
                                                                 "Total Amount" : total_amount,
                                                                 "Investable Amount": investable_amounnt,
-                                                                "P & L percent":pnl_percent,
+                                                                "P & L percent":PnL,
                                                                 "Time": {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
                                                             }
                                                         )
@@ -638,7 +645,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                         await self.send(text_data=json.dumps({
                                                                     'message': 'SELL Order placed successfully',
                                                                     'BUY_LTP': buy_order_price,
-                                                                    "pnl_percentage":pnl_percent,
+                                                                    "pnl_percentage":PnL,
                                                                    
                                                                 }))
 
@@ -673,7 +680,7 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                          
                                        
                                         
-                                        if reverse_Trade == "ON" and pnl_percent < self.expected_profit_percent: 
+                                        if reverse_Trade == "ON" and PnL < self.expected_profit_percent: 
                                             self.previous_ltp = None
                                             self.ltp_at_order = None
                                             self.locked_ltp = None
@@ -693,13 +700,14 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                     rest_ltp = ltp_data['data'][key].get('last_price')
                                             self.ltp_at_order = rest_ltp
                                             
+                                            
+                                            investable_amounnt = float(investable_amounnt)
                                             print('total_amount',total_amount)
                                             print('innvestable_anouut',investable_amounnt)
-                                            investable_amounnt = float(investable_amounnt)
-                                            if pnl_percent > 0 :
-                                                new_investable = investable_amounnt + (pnl_percent / 100) * investable_amounnt
+                                            if PnL > 0 :
+                                                new_investable = investable_amounnt + (PnL / 100) * investable_amounnt
                                             else:
-                                                new_investable = investable_amounnt - (abs(pnl_percent) / 100) * investable_amounnt
+                                                new_investable = investable_amounnt - (abs(PnL) / 100) * investable_amounnt
                                             
                                             print('new investable',new_investable)
                                             print(self.ltp_at_order)
@@ -752,10 +760,12 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                             price = detail_data["data"]["average_price"]
                                                             buy_order_price = float(price)
                                                             self.ltp_at_order = buy_order_price
+                                                            self.buy_in_ltp = buy_order_price
                                                             
                                                             reverse_Trade = "OFF"
                                             
                                                             self.toggle = False
+                                                            investable_amounnt = new_investable
                                                             
                                                             
                                                             log_order_event(
@@ -764,9 +774,10 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                                                 {
                                                                     'Token_Purchase': self.reverse_token,
                                                                     'Market Value': self.latest_spot_price,
+                                                                    'Quantity': quantity,
                                                                     'BUY LTP': buy_order_price,
                                                                     "Total Amount" : total_amount,
-                                                                    "Investable Amount": investable_amounnt,
+                                                                    "Investable Amount": new_investable,
                                                                     "Time": {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
                                                                 }
                                                             )
