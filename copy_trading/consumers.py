@@ -314,7 +314,17 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                         
                         current_str = current_dt.strftime("%H:%M:%S.%f")[:-3]
                         
-           
+                        spot_file_path = os.path.join(settings.BASE_DIR, 'spot_prices.txt')
+                        try:
+                            with open(spot_file_path, 'a') as f:
+                                f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - {self.latest_spot_price}\n")
+                                print('file created')
+                        except Exception as e:
+                            print(f"⚠️ Error writing spot price to file: {e}")
+                    
+                        except Exception as e:
+                            print(f"❌ Error fetching")
+
                       
                         
                         rest_ltp = ws_ltp
@@ -332,6 +342,9 @@ class LiveOptionDataConsumer(AsyncWebsocketConsumer):
                                 'timestamp': time.strftime('%H:%M:%S')
                             }
                             
+
+                          
+                        
                             
                             self.account_name = self.fetch_upstox_user_name(access_token)
 
