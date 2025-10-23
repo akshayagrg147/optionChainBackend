@@ -36,6 +36,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
         self.reverse_trade = None
         self.toggle = True
         self.buy_token = None
+        self.buy_trading_symbol = None  # Store trading symbol instead of token
         self.buy_quantity = None
         self.buy_in_ltp = None
         self.sell_in_ltp = None
@@ -45,8 +46,12 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
         self.nifty_token = None
         self.ce_token = None
         self.pe_token = None
+        self.ce_trading_symbol = None  # Store trading symbol for CE
+        self.pe_trading_symbol = None  # Store trading symbol for PE
         self.ce_reverse_token = None
         self.pe_reverse_token = None
+        self.ce_reverse_trading_symbol = None  # Store trading symbol for reverse CE
+        self.pe_reverse_trading_symbol = None  # Store trading symbol for reverse PE
         self.index_name = "NIFTY"
         self.instruments_cache = None
         self.account_name = None
@@ -84,34 +89,42 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 return []
         return self.instruments_cache
     
-    def get_instrument_tokens_by_trading_symbol(self, trading_symbol_input, index_name="NIFTY"):
+    def get_instrument_details_by_trading_symbol(self, trading_symbol_input, index_name="NIFTY"):
+        """Get both token and trading symbol details for CE and PE"""
         print("🔍 Raw input symbol:", trading_symbol_input)
         
         if not self.kite:
             print("❌ KiteConnect not initialized")
-            return {"CE": None, "PE": None}
+            return {"CE": {"token": None, "trading_symbol": None}, "PE": {"token": None, "trading_symbol": None}}
         
         instruments = self.get_instruments()
         if not instruments:
-            return {"CE": None, "PE": None}
+            return {"CE": {"token": None, "trading_symbol": None}, "PE": {"token": None, "trading_symbol": None}}
         
         clean_symbol = trading_symbol_input.replace(" ", "").upper()
-        result = {"CE": None, "PE": None}
+        result = {
+            "CE": {"token": None, "trading_symbol": None}, 
+            "PE": {"token": None, "trading_symbol": None}
+        }
         
+        # First find the exact match
         for instrument in instruments:
             if instrument['tradingsymbol'].replace(" ", "").upper() == clean_symbol:
                 if instrument['instrument_type'] == 'CE':
-                    result["CE"] = instrument['instrument_token']
-                    print(f"✅ CE Exact match found: {instrument['tradingsymbol']}, Token: {result['CE']}")
+                    result["CE"]["token"] = instrument['instrument_token']
+                    result["CE"]["trading_symbol"] = instrument['tradingsymbol']
+                    print(f"✅ CE Exact match found: {instrument['tradingsymbol']}, Token: {result['CE']['token']}")
                 elif instrument['instrument_type'] == 'PE':
-                    result["PE"] = instrument['instrument_token']
-                    print(f"✅ PE Exact match found: {instrument['tradingsymbol']}, Token: {result['PE']}")
+                    result["PE"]["token"] = instrument['instrument_token']
+                    result["PE"]["trading_symbol"] = instrument['tradingsymbol']
+                    print(f"✅ PE Exact match found: {instrument['tradingsymbol']}, Token: {result['PE']['token']}")
                 break
         
-        if result["CE"] or result["PE"]:
+        # Find the opposite instrument
+        if result["CE"]["token"] or result["PE"]["token"]:
             found_instrument = None
             for instrument in instruments:
-                if instrument['instrument_token'] == (result["CE"] or result["PE"]):
+                if instrument['instrument_token'] == (result["CE"]["token"] or result["PE"]["token"]):
                     found_instrument = instrument
                     break
             
@@ -124,11 +137,13 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                         instrument['name'] == found_instrument['name']):
                         
                         if opposite_type == 'CE':
-                            result["CE"] = instrument['instrument_token']
-                            print(f"✅ CE Opposite match found: {instrument['tradingsymbol']}, Token: {result['CE']}")
+                            result["CE"]["token"] = instrument['instrument_token']
+                            result["CE"]["trading_symbol"] = instrument['tradingsymbol']
+                            print(f"✅ CE Opposite match found: {instrument['tradingsymbol']}, Token: {result['CE']['token']}")
                         else:
-                            result["PE"] = instrument['instrument_token']
-                            print(f"✅ PE Opposite match found: {instrument['tradingsymbol']}, Token: {result['PE']}")
+                            result["PE"]["token"] = instrument['instrument_token']
+                            result["PE"]["trading_symbol"] = instrument['tradingsymbol']
+                            print(f"✅ PE Opposite match found: {instrument['tradingsymbol']}, Token: {result['PE']['token']}")
                         break
         
         return result
@@ -237,31 +252,32 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             except Exception as e:
                 print(f"❌ Error updating subscription: {str(e)}")
 
-    async def place_zerodha_order(self, transaction_type, instrument_token, quantity, order_type="MARKET", price=0):
-        """Place order using Zerodha KiteConnect API"""
+    async def place_zerodha_order(self, transaction_type, trading_symbol, quantity, order_type="MARKET", price=0):
+        """Place order using Zerodha KiteConnect API with trading symbol"""
         try:
+            # Extract exchange from trading symbol (first 3 characters)
+            exchange = trading_symbol[:3]
+            
             if order_type.upper() == "MARKET":
                 order_id = self.kite.place_order(
                     variety=self.kite.VARIETY_REGULAR,
-                    exchange=self.kite.EXCHANGE_NFO,
-                    tradingsymbol="", 
+                    exchange=exchange,
+                    tradingsymbol=trading_symbol,
                     transaction_type=transaction_type,
                     quantity=quantity,
                     order_type=self.kite.ORDER_TYPE_MARKET,
-                    product=self.kite.PRODUCT_MIS if quantity % self.lot == 0 else self.kite.PRODUCT_CNC,
-                   
+                    product=self.kite.PRODUCT_MIS if quantity % self.lot == 0 else self.kite.PRODUCT_CNC
                 )
             else:
                 order_id = self.kite.place_order(
                     variety=self.kite.VARIETY_REGULAR,
-                    exchange=self.kite.EXCHANGE_NFO,
-                    tradingsymbol="",
+                    exchange=exchange,
+                    tradingsymbol=trading_symbol,
                     transaction_type=transaction_type,
                     quantity=quantity,
                     order_type=self.kite.ORDER_TYPE_LIMIT,
                     price=price,
-                    product=self.kite.PRODUCT_MIS if quantity % self.lot == 0 else self.kite.PRODUCT_CNC,
-                    instrument_token=instrument_token
+                    product=self.kite.PRODUCT_MIS if quantity % self.lot == 0 else self.kite.PRODUCT_CNC
                 )
             
             print(f"✅ Order placed successfully. Order ID: {order_id}")
@@ -307,26 +323,35 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 return
             print(f"✅ {self.index_name} token found: {self.nifty_token}")
 
-            ce_tokens = self.get_instrument_tokens_by_trading_symbol(trading_symbol, self.index_name)
+            # Get instrument details for both trading symbols
+            ce_details = self.get_instrument_details_by_trading_symbol(trading_symbol, self.index_name)
             
             if trading_symbol_2:
-                pe_tokens = self.get_instrument_tokens_by_trading_symbol(trading_symbol_2, self.index_name)
+                pe_details = self.get_instrument_details_by_trading_symbol(trading_symbol_2, self.index_name)
             else:
-                pe_tokens = {"CE": None, "PE": None}
-                if ce_tokens["CE"]:
-                    pe_tokens["PE"] = ce_tokens["PE"]
-                elif ce_tokens["PE"]:
-                    pe_tokens["CE"] = ce_tokens["CE"]
+                pe_details = {"CE": {"token": None, "trading_symbol": None}, "PE": {"token": None, "trading_symbol": None}}
+                if ce_details["CE"]["token"]:
+                    pe_details["PE"]["token"] = ce_details["PE"]["token"]
+                    pe_details["PE"]["trading_symbol"] = ce_details["PE"]["trading_symbol"]
+                elif ce_details["PE"]["token"]:
+                    pe_details["CE"]["token"] = ce_details["CE"]["token"]
+                    pe_details["CE"]["trading_symbol"] = ce_details["CE"]["trading_symbol"]
             
-            self.ce_token = ce_tokens.get("CE")
-            self.ce_reverse_token = ce_tokens.get("PE")
-            self.pe_token = pe_tokens.get("PE")
-            self.pe_reverse_token = pe_tokens.get("CE")
+            # Store token and trading symbol details
+            self.ce_token = ce_details["CE"]["token"]
+            self.ce_trading_symbol = ce_details["CE"]["trading_symbol"]
+            self.ce_reverse_token = ce_details["PE"]["token"]
+            self.ce_reverse_trading_symbol = ce_details["PE"]["trading_symbol"]
+            
+            self.pe_token = pe_details["PE"]["token"]
+            self.pe_trading_symbol = pe_details["PE"]["trading_symbol"]
+            self.pe_reverse_token = pe_details["CE"]["token"]
+            self.pe_reverse_trading_symbol = pe_details["CE"]["trading_symbol"]
 
-            print("🎯 CE Token:", self.ce_token)
-            print("🎯 CE REVERSE Token:", self.ce_reverse_token)
-            print("🎯 PE Token:", self.pe_token)
-            print("🎯 PE REVERSE Token:", self.pe_reverse_token)
+            print("🎯 CE Token:", self.ce_token, "CE Trading Symbol:", self.ce_trading_symbol)
+            print("🎯 CE REVERSE Token:", self.ce_reverse_token, "CE Reverse Trading Symbol:", self.ce_reverse_trading_symbol)
+            print("🎯 PE Token:", self.pe_token, "PE Trading Symbol:", self.pe_trading_symbol)
+            print("🎯 PE REVERSE Token:", self.pe_reverse_token, "PE Reverse Trading Symbol:", self.pe_reverse_trading_symbol)
 
             # Initially subscribe only to spot and both option tokens for buy conditions
             initial_tokens = [self.ce_token, self.pe_token, self.nifty_token]
@@ -417,7 +442,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             ws_thread.start()
 
             while self.keep_running:
-                await asyncio.sleep(1)
+                await asyncio.sleep(0)
 
         except Exception as e:
             error_msg = f'Stream setup failed: {str(e)}'
@@ -570,7 +595,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 self.target_market_priceCE <= float(self.latest_spot_price)):
                 
                 print(f"✅ CE Buy Condition Met: {self.latest_spot_price}, Target: {self.target_market_priceCE}")
-                await self.place_buy_order(self.ce_token, self.quantityCE, "CE", timestamp)
+                await self.place_buy_order(self.ce_token, self.ce_trading_symbol, self.quantityCE, "CE", timestamp)
                 return
             
             # PE Buy Condition  
@@ -579,21 +604,27 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 self.target_market_pricePE >= float(self.latest_spot_price)):
                 
                 print(f"✅ PE Buy Condition Met: {self.latest_spot_price}, Target: {self.target_market_pricePE}")
-                await self.place_buy_order(self.pe_token, self.quantityPE, "PE", timestamp)
+                await self.place_buy_order(self.pe_token, self.pe_trading_symbol, self.quantityPE, "PE", timestamp)
                 
         except Exception as e:
             print(f"❌ Error in check_buy_conditions: {str(e)}")
 
-    async def place_buy_order(self, token, quantity, option_type, timestamp):
-        """Place buy order for CE or PE"""
+    async def place_buy_order(self, token, trading_symbol, quantity, option_type, timestamp):
+        """Place buy order for CE or PE using trading symbol"""
         try:
-            print(f'🎯 Placing BUY order - Token: {token}, Type: {option_type}, Qty: {quantity}')
+            print(f'🎯 Placing BUY order - Token: {token}, Trading Symbol: {trading_symbol}, Type: {option_type}, Qty: {quantity}')
+            
+            if not trading_symbol:
+                raise ValueError(f"Trading symbol not found for {option_type}")
             
             order_id = await self.place_zerodha_order(
                 transaction_type=self.kite.TRANSACTION_TYPE_BUY,
-                instrument_token=token,
+                exchange=self.kite.EXCHANGE_NFO,
+                trading_symbol=trading_symbol,
                 quantity=quantity,
-                order_type="MARKET"
+                order_type=self.kite.ORDER_TYPE_MARKET,
+                product=self.kite.PRODUCT_NRML,
+                validity=self.kite.VALIDITY_DAY
             )
             
             if order_id:
@@ -607,15 +638,18 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                     self.order_placedCE = True
                     self.order_placedPE = True
                     self.buy_token = token
+                    self.buy_trading_symbol = trading_symbol
                     self.buy_quantity = quantity
                     self.buy_in_ltp = float(order_details['average_price'])
                     self.ltp_at_order = self.buy_in_ltp
                     
-                    # Set reverse token based on option type
+                    # Set reverse token and trading symbol based on option type
                     if option_type == "CE":
                         self.reverse_token = self.ce_reverse_token
+                        self.reverse_trading_symbol = self.ce_reverse_trading_symbol
                     else:
                         self.reverse_token = self.pe_reverse_token
+                        self.reverse_trading_symbol = self.pe_reverse_trading_symbol
                     
                     # Update subscription to only the bought token and spot
                     new_tokens = [self.buy_token, self.nifty_token]
@@ -633,6 +667,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                         "✅ Buy Order Placed",
                         {
                             'Token_Purchase': self.buy_token,
+                            'Trading_Symbol': self.buy_trading_symbol,
                             'Market Value': self.latest_spot_price,
                             'Quantity': quantity,
                             'BUY LTP': self.buy_in_ltp,
@@ -661,18 +696,24 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
     async def place_sell_order(self, current_ltp):
         """Place sell order and handle reverse trade if needed"""
         try:
-            print(f'🎯 Placing SELL order - Token: {self.buy_token}, Qty: {self.buy_quantity}')
+            print(f'🎯 Placing SELL order - Token: {self.buy_token}, Trading Symbol: {self.buy_trading_symbol}, Qty: {self.buy_quantity}')
+            
+            if not self.buy_trading_symbol:
+                raise ValueError("Buy trading symbol not found")
             
             order_id = await self.place_zerodha_order(
                 transaction_type=self.kite.TRANSACTION_TYPE_SELL,
-                instrument_token=self.buy_token,
+                trading_symbol=self.buy_trading_symbol,
                 quantity=self.buy_quantity,
-                order_type="MARKET"
+                order_type=self.kite.ORDER_TYPE_MARKET,
+                exchange=self.kite.EXCHANGE_NFO,
+                product=self.kite.PRODUCT_NRML,
+                validity=self.kite.VALIDITY_DAY
             )
             
             if order_id:
                 # Wait for order processing
-                await asyncio.sleep(2)
+                await asyncio.sleep(0)
                 
                 order_details = await self.fetch_order_status(order_id)
                 
@@ -686,6 +727,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                         "✅ SELL Order Placed",
                         {
                             'Token_Purchase': self.buy_token,
+                            'Trading_Symbol': self.buy_trading_symbol,
                             'Market Value': self.latest_spot_price,
                             'SELL LTP': self.sell_in_ltp,
                             'Quantity': self.buy_quantity,
@@ -734,11 +776,17 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
         try:
             print("🔄 Executing reverse trade...")
             
+            if not self.reverse_trading_symbol:
+                print("❌ Reverse trading symbol not found")
+                await self.send(text_data=json.dumps({'error': 'Reverse trading symbol not found'}))
+                return
+            
             self.previous_ltp = None
             self.ltp_at_order = None
             self.locked_ltp = None
             self.step_size = None
             self.buy_token = self.reverse_token
+            self.buy_trading_symbol = self.reverse_trading_symbol
             
             # Get current LTP for the reverse token
             quote = self.kite.quote([self.buy_token])
@@ -761,7 +809,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             print(f'📦 Reverse trade quantity: {quantity}')
             
             if quantity > 0:
-                print(f"🎯 Executing reverse trade with token: {self.reverse_token}")
+                print(f"🎯 Executing reverse trade with token: {self.reverse_token}, Trading Symbol: {self.reverse_trading_symbol}")
                 
                 # Update subscription to the reverse token
                 new_tokens = [self.reverse_token, self.nifty_token]
@@ -769,13 +817,16 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 
                 order_id = await self.place_zerodha_order(
                     transaction_type=self.kite.TRANSACTION_TYPE_BUY,
-                    instrument_token=self.reverse_token,
+                    trading_symbol=self.reverse_trading_symbol,
                     quantity=quantity,
-                    order_type="MARKET"
+                    order_type=self.kite.ORDER_TYPE_MARKET,
+                    exchange=self.kite.EXCHANGE_NFO,    
+                    product=self.kite.PRODUCT_NRML,
+                    validity=self.kite.VALIDITY_DAY
                 )
                 
                 if order_id:
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(0)
                     order_details = await self.fetch_order_status(order_id)
                     
                     if order_details and order_details['status'] == 'COMPLETE':
@@ -797,6 +848,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                             "✅ Reverse Buy Order Placed",
                             {
                                 'Token_Purchase': self.reverse_token,
+                                'Trading_Symbol': self.reverse_trading_symbol,
                                 'Market Value': self.latest_spot_price,
                                 'Quantity': quantity,
                                 'BUY LTP': price,

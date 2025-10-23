@@ -1,0 +1,96 @@
+2025-10-23 13:11:54,057 | INFO | 
+==================== SHIVAM SHARMA | ✅ Buy Order Placed ====================
+Token_Purchase: 15138562
+Trading_Symbol: NIFTY25OCT27600CE
+Market Value: 26050.65
+Quantity: 75
+BUY LTP: 1.15
+Total Amount: 100
+Investable Amount: 40
+Time: 2025-10-23 13:11:54
+------------------------------------------------------------
+2025-10-23 13:12:17,510 | INFO | 
+==================== SHIVAM SHARMA | ✅ SELL Order Placed ====================
+Token_Purchase: 15138562
+Trading_Symbol: NIFTY25OCT27600CE
+Market Value: 26047.3
+SELL LTP: 1.1
+Quantity: 75
+Total Amount: 100
+Investable Amount: 40
+P & L percent: -4.35
+Time: 2025-10-23 13:12:17
+------------------------------------------------------------
+2025-10-23 13:40:02,141 | INFO | 
+==================== SHIVAM SHARMA | ✅ Buy Order Placed ====================
+Token_Purchase: 15027202
+Trading_Symbol: NIFTY25OCT22700PE
+Market Value: 26019.8
+Quantity: 75
+BUY LTP: 1.5
+Total Amount: 100
+Investable Amount: 40
+Time: 2025-10-23 13:40:02
+------------------------------------------------------------
+2025-10-23 13:42:32,363 | INFO | 
+==================== SHIVAM SHARMA | ✅ SELL Order Placed ====================
+Token_Purchase: 15027202
+Trading_Symbol: NIFTY25OCT22700PE
+Market Value: 26026.05
+SELL LTP: 1.45
+Quantity: 75
+Total Amount: 100
+Investable Amount: 40
+P & L percent: -3.33
+Time: 2025-10-23 13:42:32
+------------------------------------------------------------
+2025-10-23 13:51:13,689 | INFO | 
+==================== SHIVAM SHARMA | ✅ Buy Order Placed ====================
+Token_Purchase: 15138562
+Trading_Symbol: NIFTY25OCT27600CE
+Market Value: 26030.05
+Quantity: 75
+BUY LTP: 1.15
+Total Amount: 100.0
+Investable Amount: 40.0
+Time: 2025-10-23 13:51:13
+------------------------------------------------------------
+2025-10-23 13:51:18,499 | INFO | 
+==================== SHIVAM SHARMA | ✅ SELL Order Placed ====================
+Token_Purchase: 15138562
+Trading_Symbol: NIFTY25OCT27600CE
+Market Value: 26029.85
+SELL LTP: 1.1
+Quantity: 75
+Total Amount: 100.0
+Investable Amount: 40.0
+P & L percent: -4.35
+Time: 2025-10-23 13:51:18
+------------------------------------------------------------
+2025-10-23 14:05:14,917 | INFO | 
+==================== SHIVAM SHARMA | ❌ BUY ORDER FAILED ====================
+Error: None
+------------------------------------------------------------
+2025-10-23 14:05:15,841 | INFO | 
+==================== SHIVAM SHARMA | ✅ Buy Order Placed ====================
+Token_Purchase: 15027202
+Trading_Symbol: NIFTY25OCT22700PE
+Market Value: 25976.8
+Quantity: 75
+BUY LTP: 1.3
+Total Amount: 100.0
+Investable Amount: 40.0
+Time: 2025-10-23 14:05:15
+------------------------------------------------------------
+2025-10-23 14:07:46,061 | INFO | 
+==================== SHIVAM SHARMA | ✅ SELL Order Placed ====================
+Token_Purchase: 15027202
+Trading_Symbol: NIFTY25OCT22700PE
+Market Value: 25981.1
+SELL LTP: 1.35
+Quantity: 75
+Total Amount: 100.0
+Investable Amount: 40.0
+P & L percent: 3.85
+Time: 2025-10-23 14:07:46
+------------------------------------------------------------

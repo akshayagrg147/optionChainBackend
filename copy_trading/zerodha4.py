@@ -1,8 +1,8 @@
 from kiteconnect import KiteConnect
 import os
 
-API_KEY = "a44a8d2b1l25cwq4"
-API_SECRET = "ij9jt934zw4bjmgo943vm5p2ksbtbyhy"
+API_KEY = "e74wrp5cse4shibt"
+API_SECRET = "dde81ug24m396drllbylt1ek3ocawstm"
 REDIRECT_URL = "http://127.0.0.1:8000/callback/"
 ACCESS_TOKEN_FILE = "zerodha_access_token.txt"
 

@@ -12,19 +12,52 @@ import csv
 from django.conf import settings
 import time
 from datetime import datetime
-class LiveOptionDataConsumer2(AsyncWebsocketConsumer): 
+from .setup_log import log_order_event, logger
+
+class LiveOptionDataConsumer2(AsyncWebsocketConsumer):
+    def __init__(self):
+        super().__init__()
+        self.reset_trade_flags()
+        
     def reset_trade_flags(self):
         self.sell_order_placed = False
         self.locked_ltp = None
         self.previous_ltp = None
+        self.last_spot_write = 0
+        self.spot_latency = 0
+        self.option_latency = 0
+        
+    def log_order_event(self, account_name: str, title: str, data: dict):
+        log_block = [f"\n{'='*20} {account_name.upper()} | {title} {'='*20}"]
+        for key, value in data.items():
+            log_block.append(f"{key}: {value}")
+        log_block.append('-' * 60)
+        logger.info('\n'.join(log_block))
+        
+    def fetch_upstox_user_name(self, access_token):
+        try:
+            headers = {
+                "Authorization": f"Bearer {access_token}"
+            }
+            response = requests.get("https://api.upstox.com/v2/user/profile", headers=headers)
+            if response.status_code == 200:
+                data = response.json()
+                print(data['data']['user_name'])
+                return data['data']['user_name']
+            else:
+                print(f"❌ Error fetching user name: {response.status_code} {response.text}")
+                return "Unknown User"
+        except Exception as e:
+            print(f"❌ Exception while fetching user name: {str(e)}")
+            return "Unknown User"
     
-
     def get_instrument_keys_by_trading_symbol(self, file_path, trading_symbol_input):
         print("🔍 Raw input symbol:", trading_symbol_input)
 
         if not os.path.exists(file_path):
             print("❌ CSV file not found at path:", file_path)
             return "CSV file not found."
+        
         base_symbol = trading_symbol_input.replace(" ", "").upper()
         ce_symbol = base_symbol.replace("PE", "CE") if base_symbol.endswith("PE") else base_symbol
         pe_symbol = base_symbol.replace("CE", "PE") if base_symbol.endswith("CE") else base_symbol
@@ -33,9 +66,10 @@ class LiveOptionDataConsumer2(AsyncWebsocketConsumer):
         print("🔍 PE symbol to check:", pe_symbol)
 
         result = {
-        "CE": None,
-        "PE": None
-            }
+            "CE": None,
+            "PE": None
+        }
+        
         try:
             with open(file_path, newline='') as csvfile:
                 reader = csv.DictReader(csvfile)
@@ -68,7 +102,7 @@ class LiveOptionDataConsumer2(AsyncWebsocketConsumer):
         self.keep_running = True
         self.upstox_ws = None
         self.latest_spot_price = None 
-        self.order_placedCE= False
+        self.order_placedCE = False
         self.order_placedPE = False
         self.ltp_at_order = None 
         self.locked_ltp = None
@@ -76,6 +110,10 @@ class LiveOptionDataConsumer2(AsyncWebsocketConsumer):
         self.rever_trade = None
         self.toggle = True
         self.buy_token = None
+        self.buy_quantity = None
+        self.buy_in_ltp = None
+        self.sell_in_ltp = None
+        self.new_invest_amount = None
 
     async def disconnect(self, close_code):
         self.keep_running = False
@@ -92,38 +130,69 @@ class LiveOptionDataConsumer2(AsyncWebsocketConsumer):
         trading_symbol_2 = payload.get('trading_symbol_2')
         target_market_priceCE = payload.get('target_market_price_CE')
         target_market_pricePE = payload.get('target_market_price_PE')
+        quantityCE = payload.get('quantityCE')
+        quantityPE = payload.get('quantityPE')
         step = payload.get('step')
         expected_profit_percent = payload.get('profit_percent')
         self.step = step
         self.expected_profit_percent = expected_profit_percent
+        total_amount = payload.get("total_amount")
+        investable_amount = payload.get("investable_amount") 
+        lot = payload.get("lot")
+        reverse_Trade = payload.get("reverseTrade")
         
-        if not instrument_key or not expiry_date or not access_token:
+        if not instrument_key or not expiry_date or not access_token or not target_market_priceCE or not target_market_pricePE or not step or not quantityCE or not quantityPE or not total_amount or not investable_amount or not lot or not reverse_Trade:
             await self.send(text_data=json.dumps({'error': 'Missing required fields'}))
             return
-       
-        asyncio.create_task(self.fetch_and_stream_data(instrument_key, expiry_date, access_token, trading_symbol))
-        asyncio.create_task(self.fetch_spot_price_forever(access_token, instrument_key))
+        
+        try:
+            self.target_market_priceCE = float(target_market_priceCE)  
+            self.target_market_pricePE = float(target_market_pricePE)  
+        except ValueError:
+            await self.send(text_data=json.dumps({'error': 'Invalid target_market_price'}))
+            return  
+        
+        asyncio.create_task(self.fetch_and_stream_data(instrument_key, expiry_date, access_token, trading_symbol, trading_symbol_2, quantityCE, quantityPE, total_amount, investable_amount, lot, reverse_Trade))
 
-    async def fetch_spot_price_forever(self, access_token, instrument_key):
-        headers = {"Authorization": f"Bearer {access_token}"}
-        url = "https://api.upstox.com/v2/market-quote/ltp"
+    async def process_spot_price(self, data_dict, instrument_key):
+        """Fast spot price extraction with minimal processing"""
+        try:
+            if 'feeds' in data_dict:
+                feed_data = data_dict['feeds'].get(instrument_key)
+                if feed_data and 'fullFeed' in feed_data:
+                    ltp_data = feed_data['fullFeed']
+                    if 'indexFF' in ltp_data:
+                        self.latest_spot_price = ltp_data['indexFF']['ltpc']['ltp']
+                        return True
+        except Exception as e:
+            print(f"❌ Spot price error: {e}")
+        return False
 
-        while self.keep_running:
-            try:
-                response = requests.get(url, headers=headers, params={"symbol": instrument_key})
-               
-                if response.status_code == 200:
-                    data = response.json()
-                    actual_key = list(data['data'].keys())[0]
-                    ltp = data['data'][actual_key].get('last_price')
-                    self.latest_spot_price = ltp  
-                    
-            except Exception as e:
-                await self.send(text_data=json.dumps({'error': f'Spot fetch error: {str(e)}'}))
+    async def measure_latency(self, data_dict, instrument_key):
+        """Measure latency for different instrument types"""
+        if 'feeds' not in data_dict:
+            return
+        
+        for ik, details in data_dict['feeds'].items():
+            market_data = details.get("fullFeed", {}).get("marketFF", {})
+            ltp_info = market_data.get("ltpc", {})
+            ltt = ltp_info.get("ltt")
+            
+            if ltt:
+                current_ts = int(time.time() * 1000)
+                latency = current_ts - int(ltt)
+                
+                # Track spot vs option latency separately
+                if ik == instrument_key:
+                    self.spot_latency = latency
+                else:
+                    self.option_latency = latency
+                
+                # Log high latency
+                if latency > 100:
+                    print(f"⚠️ High latency {latency}ms for {ik}")
 
-            await asyncio.sleep(1)
-
-    async def fetch_and_stream_data(self, instrument_key, expiry_date, access_token, trading_symbol):
+    async def fetch_and_stream_data(self, instrument_key, expiry_date, access_token, trading_symbol, trading_symbol_2, quantityCE, quantityPE, total_amount, investable_amount, lot, reverse_Trade):
         option_chain_url = "https://api.upstox.com/v2/option/chain"
            
         headers = {
@@ -131,6 +200,7 @@ class LiveOptionDataConsumer2(AsyncWebsocketConsumer):
             'Accept': 'application/json',
             'Content-Type': 'application/json'
         }
+        
         params = {
             'instrument_key': instrument_key,
             'expiry_date': expiry_date
@@ -174,45 +244,65 @@ class LiveOptionDataConsumer2(AsyncWebsocketConsumer):
         except Exception as e:
             await self.send(text_data=json.dumps({'error': f'WebSocket auth failed: {str(e)}'}))
             return
+            
         ssl_context = ssl.create_default_context()
         ssl_context.check_hostname = False
         ssl_context.verify_mode = ssl.CERT_NONE
         
-        file_path = os.path.join(settings.BASE_DIR,'nse.csv')
-        a =  trading_symbol
+        file_path = os.path.join(settings.BASE_DIR, 'nse.csv')
+        a = trading_symbol
         instrument_token = self.get_instrument_keys_by_trading_symbol(file_path, a)
 
         ce_token = instrument_token.get("CE")
         ce_reverse_token = instrument_token.get("PE")
-        
+        b = trading_symbol_2
+        instrument_token_2 = self.get_instrument_keys_by_trading_symbol(file_path, b)
+        pe_token = instrument_token_2.get("PE")
+        pe_reverse_token = instrument_token_2.get("CE")
 
         print("🎯 CE Token:", ce_token)
         print("🎯 CE REVERSE Token:", ce_reverse_token)
+        print("🎯 PE Token:", pe_token)
+        print("🎯 Pe REVERSE Token:", pe_reverse_token)
         
-
         last_update_time = time.time()
+        last_spot_time = 0
+        spot_update_interval = 0.1  # 100ms
 
         try:
             async with websockets.connect(ws_url, ssl=ssl_context) as ws:
                 self.upstox_ws = ws
 
-                sub_msg = {
-                    "guid": "some-guid",
+                # Subscribe to spot price separately with higher priority
+                spot_sub_msg = {
+                    "guid": "spot-guid",
+                    "method": "sub", 
+                    "data": {
+                        "mode": "full",
+                        "instrumentKeys": [instrument_key]  # Just the spot instrument
+                    }
+                }
+                await ws.send(json.dumps(spot_sub_msg).encode("utf-8"))
+                
+                # Small delay to prioritize spot data
+               
+                
+                # Then subscribe to options
+                option_sub_msg = {
+                    "guid": "option-guid", 
                     "method": "sub",
                     "data": {
                         "mode": "full",
-                        "instrumentKeys": [ce_token,ce_reverse_token,instrument_key]
+                        "instrumentKeys": [ce_token, pe_token, ce_reverse_token, pe_reverse_token]
                     }
                 }
-                await ws.send(json.dumps(sub_msg).encode("utf-8"))
+                await ws.send(json.dumps(option_sub_msg).encode("utf-8"))
 
                 last_sent_time = None           
 
                 while self.keep_running:
                     try:
-                        message = await asyncio.wait_for(ws.recv(), timeout=30)
-                       
-                     
+                        message = await asyncio.wait_for(ws.recv(), timeout=300)
                         last_update_time = time.time()
                     except asyncio.TimeoutError:
                         if time.time() - last_update_time > 60:
@@ -226,20 +316,20 @@ class LiveOptionDataConsumer2(AsyncWebsocketConsumer):
                         decoded = pb.FeedResponse()
                         decoded.ParseFromString(message)
                         data_dict = MessageToDict(decoded)
-                        print(data_dict)
-                        
                     except Exception as e:
                         await self.send(text_data=json.dumps({'error': f'Decode error: {str(e)}'}))
                         continue
                     
-                    try:
-                        if 'feeds' in data_dict:
-                            for instrument_key, feed_data in data_dict['feeds'].items():
-                                if instrument_key == 'NSE_INDEX|Nifty 50':
-                                    spot = feed_data['fullFeed']['indexFF']['ltpc']['ltp']
-                                    
-                    except Exception as e:
-                        print(f"Error while extracting LTP: {e}")
+                    current_time = time.time()
+                    
+                    # Process spot price with throttling
+                    if current_time - last_spot_time >= spot_update_interval:
+                        spot_updated = await self.process_spot_price(data_dict, instrument_key)
+                        if spot_updated:
+                            last_spot_time = current_time
+                    
+                    # Measure latency for monitoring
+                    await self.measure_latency(data_dict, instrument_key)
 
                     feeds = data_dict.get("feeds", {})
                     for ik, details in feeds.items():
@@ -248,284 +338,105 @@ class LiveOptionDataConsumer2(AsyncWebsocketConsumer):
                         ws_ltp = ltp_info.get("ltp")
                         ltt = ltp_info.get("ltt")
                         
-
                         if not ws_ltp or not ltt:
-                            continue
+                            continue    
 
-                       
-                      
-                        
                         ltt_int = int(ltt)
                         current_ts = int(time.time() * 1000)
                         latency = current_ts - ltt_int
                         ltt_dt = datetime.fromtimestamp(ltt_int / 1000.0)
                         ltt_str = ltt_dt.strftime("%H:%M:%S.%f")[:-3]
-                        #print('socket timing',ltt_str)
-                        
                         
                         current_dt = datetime.fromtimestamp(current_ts / 1000.0)
-                       
-                        
                         current_str = current_dt.strftime("%H:%M:%S.%f")[:-3]
                         
-                        #print('current timing',current_str)
-                        
-                        
-                        # print("📡 Upstox sent LTT at: ", ltt_dt.strftime("%H:%M:%S.%f")[:-3])
-                        # print("🖥️ My system received at:", current_dt.strftime("%H:%M:%S.%f")[:-3])
-                        # print(f"⏱️ Delay from Upstox to me: {latency} ms | LTP: {ws_ltp}")
-    
+                        # Optimized file writing - only write significant changes or at intervals
+                        spot_file_path = os.path.join(settings.BASE_DIR, 'spot_prices.txt')
+                        if current_time - self.last_spot_write > 1.0:  # 1 second interval
+                            try:
+                                with open(spot_file_path, 'a') as f:
+                                    f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - {self.latest_spot_price}\n")
+                                self.last_spot_write = current_time
+                            except Exception as e:
+                                print(f"⚠️ Error writing spot price to file: {e}")
 
-                        
-                        log_line = f"WebSocket LTT (ms): {ltt_int} | Human: {ltt_str} | LTP: {ws_ltp} | Latency: {latency}ms | Socket Timing :{ltt_str} | Current Timing :{current_str}\n"
-                        #print(log_line.strip()) 
-                        
-                        with open("websocket_latency_lognew2new.txt", "a") as logfile:
-                            logfile.write(log_line)
-                        
                         rest_ltp = ws_ltp
                        
                         info = instrument_type_map.get(ik)
                         if info:
-                            
-                            a = self.latest_spot_price            
                             result = {
                                 'type': info['type'],
                                 'strike': info['strike'],
                                 'ltp': rest_ltp,
                                 'latency_ms': latency,
-                                'spot_price': spot,
-                                'timestamp': time.strftime('%H:%M:%S')
+                                'spot_price': self.latest_spot_price,
+                                'timestamp': time.strftime('%H:%M:%S'),
+                                'spot_latency': self.spot_latency,
+                                'option_latency': self.option_latency,
+                                'instrument_key': ik
                             }
                             
-                            if ik == ce_token and not self.order_placedCE and self.latest_spot_price is not None:   
+                            # Trading condition monitoring without order placement
+                            if ik == ce_token and not self.order_placedCE and self.latest_spot_price is not None:
                                 try:
-                                    #print("inside ce ")
                                     if self.target_market_priceCE <= float(self.latest_spot_price):
-                                        print("inside ce2")
-                                        
-                                       
-                                        print(f'✅ In PlaceOrder Execution Block CE condition : {self.latest_spot_price}, Target: {self.target_market_priceCE}')
-
-                                        self.ltp_at_order = rest_ltp
-                                        print(self.ltp_at_order)
-                                        self.order_placedCE  = True
-                                        self.order_placedPE  = True
-                                        self.buy_token = ce_token
-                                        self.reverse_token = ce_reverse_token
-                                        print('BUY TOKEN ',ce_token)
-                                        data = {
-                                                        "quantity": 1,
-                                                        "product": "D",
-                                                        "validity": "DAY",
-                                                        "price": 0,
-                                                        "tag": "string",
-                                                        "instrument_token": ce_token,
-                                                        "order_type": "MARKET",
-                                                        "transaction_type": "BUY",
-                                                        "disclosed_quantity": 0,
-                                                        "trigger_price": 0,
-                                                        "is_amo": False  
-                                                    }
-                                        
-
-                                        print(data)
-  
-                                            # order_response = requests.post(
-                                            #     "https://your-api-url.com/place-order", 
-                                            #     headers={
-                                            #         "Authorization": f"Bearer {access_token}",
-                                            #         "Content-Type": "application/json"
-                                            #     },
-                                            #     json={
-                                            #         "symbol": trading_symbol,
-                                            #         "order_type": "BUY",
-                                            #         "quantity": 1,
-                                            #         "price": self.latest_spot_price
-                                            #     }
-                                            # )
-                                            # if order_response.status_code == 200:
-                                            #     await self.send(text_data=json.dumps({'success': 'Order placed'}))
-                                            # else:
-                                            #     await self.send(text_data=json.dumps({'error': f'Order failed: {order_response.text}'}))
-                                            # self.order_placed = True
-                                            
-                                        await self.send(text_data=json.dumps({
-                                            'message': 'Order placed successfully...Waiting for square off',
-                                            'market_value':self.latest_spot_price,
-                                            'ltp': self.ltp_at_order,           
-                                            'timestamp': time.strftime('%H:%M:%S')
-
-        }))
+                                        print(f'✅ CE Buy Condition Met: {self.latest_spot_price}, Target: {self.target_market_priceCE}')
+                                        result['trading_signal'] = 'CE_BUY_CONDITION_MET'
+                                        result['signal_type'] = 'CE'
+                                        self.order_placedCE = True
+                                        self.order_placedPE = True
                                 except Exception as e:
-                                    await self.send(text_data=json.dumps({'error': f'Order exception: {str(e)}'}))
-                                                                                          
-                            if not self.order_placedPE and self.latest_spot_price is not None:
-                                #print(info['type'])
+                                    print(f'CE condition error: {str(e)}')
+                            
+                            if ik == pe_token and not self.order_placedPE and self.latest_spot_price is not None:
                                 try:
-                                    
                                     if self.target_market_pricePE >= float(self.latest_spot_price):
-                                        if ik == pe_token:
-                                        
-                                            print(f'✅ In PlaceOrder Execution Block PE: SPOT: {self.latest_spot_price}, Target: {self.target_market_pricePE}')
-                                            self.ltp_at_order = rest_ltp 
-                                            
-                                            print('live ltp at purchase',self.ltp_at_order) 
-                                            self.order_placedPE  = True
-                                            self.order_placedCE  = True
-                                            self.buy_token = pe_token
-                                            self.reverse_token = pe_reverse_token
-                                            print('BUY TOKEN ',pe_token)
-                                            data = {
-                                                        "quantity": 1,
-                                                        "product": "D",
-                                                        "validity": "DAY",
-                                                        "price": 0,
-                                                        "tag": "string",
-                                                        "instrument_token": pe_token,
-                                                        "order_type": "MARKET",
-                                                        "transaction_type": "BUY",
-                                                        "disclosed_quantity": 0,
-                                                        "trigger_price": 0,
-                                                        "is_amo": False  
-                                                    }
-                                            print(data)
-                                            # order_response = requests.post(
-                                            #     "https://your-api-url.com/place-order", 
-                                            #     headers={
-                                            #         "Authorization": f"Bearer {access_token}",
-                                            #         "Content-Type": "application/json"
-                                            #     },
-                                            #     json={
-                                            #         "symbol": trading_symbol,
-                                            #         "order_type": "BUY",
-                                            #         "quantity": 1,
-                                            #         "price": self.latest_spot_price
-                                            #     }
-                                            # )
-                                            # if order_response.status_code == 200:
-                                            #     await self.send(text_data=json.dumps({'success': 'Order placed'}))
-                                            # else:
-                                            #     await self.send(text_data=json.dumps({'error': f'Order failed: {order_response.text}'}))
-                                            # self.order_placed = True
-                                            
-                                            await self.send(text_data=json.dumps({
-                                            'message': 'Order placed successfully....Waiting for square off',
-                                            'market_value':self.latest_spot_price,
-                                            'ltp': self.ltp_at_order,          
-                                            'timestamp': time.strftime('%H:%M:%S')
-
-                                            }))
-                                      
+                                        print(f'✅ PE Buy Condition Met: {self.latest_spot_price}, Target: {self.target_market_pricePE}')
+                                        result['trading_signal'] = 'PE_BUY_CONDITION_MET'
+                                        result['signal_type'] = 'PE'
+                                        self.order_placedPE = True
+                                        self.order_placedCE = True
                                 except Exception as e:
-                                    await self.send(text_data=json.dumps({'error': f'Order exception: {str(e)}'}))
+                                    print(f'PE condition error: {str(e)}')
                             
-                            
+                            # Trailing stop loss monitoring
                             if (self.order_placedPE or self.order_placedCE) and not self.sell_order_placed and self.ltp_at_order is not None and ik == self.buy_token:
                                 try:
-                                              
                                     current_ltp = float(rest_ltp)
-
-                                    if self.locked_ltp is None:
-                                        self.step_size = round(float(self.ltp_at_order) * self.step / 100, 2) # gap 
-                                        self.locked_ltp = round(float(self.ltp_at_order) - self.step_size, 2) # 150 - 0.75
-                                        self.previous_ltp = float(self.ltp_at_order)
-                                        await self.send(text_data=json.dumps({
-                                            'init_SL': True,    
-                                            'locked_LTP': self.locked_ltp,
-                                            'step_size': self.step_size
-                                                }))   
-                                    print(f"📈 Buy: {self.ltp_at_order} | Locked SL: {self.locked_ltp} | Live LTP: {current_ltp}")
-                                    if current_ltp > self.previous_ltp:
-                                        while current_ltp >= self.locked_ltp + self.step_size:
-                                            self.locked_ltp = round(self.locked_ltp + self.step_size, 2)
-                                            
-                                        if self.locked_ltp == self.ltp_at_order:
-                                            self.locked_ltp = round(self.locked_ltp - self.step_size, 2)
-                                            
-                                    pnl_percent = round(((current_ltp - float(self.ltp_at_order)) / float(self.ltp_at_order)) * 100, 2)
-                                    print(f"📈 Buy: {self.ltp_at_order} | Locked SL: {self.locked_ltp} | Live LTP: {current_ltp} | P&L: {pnl_percent}%")
-
-                                    if (current_ltp <= self.locked_ltp and current_ltp < self.previous_ltp) or (current_ltp < self.locked_ltp) :
-                                        self.sell_order_placed = True
-                                        print(f'Selling the token : {self.buy_token}') 
-                                        data = {
-                                                        "quantity": 1,
-                                                        "product": "I",
-                                                        "validity": "DAY",
-                                                        "price": 0,
-                                                        "tag": "string",
-                                                        "instrument_token": self.buy_token,
-                                                        "order_type": "MARKET",
-                                                        "transaction_type": "BUY",
-                                                        "disclosed_quantity": 0,
-                                                        "trigger_price": 0,
-                                                        "is_amo": False  
-                                                    }
-                                        print(data)
                                     
-                                        await self.send(text_data=json.dumps({
-                                                'message': 'selling block',
-                                                'ltp': current_ltp,
-                                                'locked_LTP': self.locked_ltp
-                                            }))
-
-                                        if self.toggle and pnl_percent < self.expected_profit_percent: 
-                                            self.previous_ltp = None
-                                            self.ltp_at_order = None
-                                            self.locked_ltp = None
-                                            self.step_size = None
-                                            self.buy_token = self.reverse_token
-                                            
-                                            if not self.ltp_at_order:
-                                            
-                                                ltp_response = requests.get(
-                                                        "https://api.upstox.com/v2/market-quote/ltp",
-                                                        headers={"Authorization": f"Bearer {access_token}"},
-                                                        params={"symbol":self.buy_token}
-                                                                                    )
-                                                if ltp_response.status_code == 200:
-                                                    ltp_data = ltp_response.json()
-                                                    key = list(ltp_data['data'].keys())[0]
-                                                    rest_ltp = ltp_data['data'][key].get('last_price')
-                                            self.ltp_at_order = rest_ltp
-                                         
-                                            print("Executing reverse trade with token:", self.reverse_token)
-                                        
-                                            data = {
-                                                        "quantity": 1,
-                                                        "product": "I",
-                                                        "validity": "DAY",
-                                                        "price": 0,
-                                                        "tag": "string",
-                                                        "instrument_token": self.reverse_token,
-                                                        "order_type": "SELL",
-                                                        "transaction_type": "BUY",
-                                                        "disclosed_quantity": 0,
-                                                        "trigger_price": 0,
-                                                        "is_amo": False  
-                                                    }
-                                            print(data)
-                                            
-                                            self.toggle = False 
-                                            
-                                            
-                           
-                                            await self.send(text_data=json.dumps({
-                                                        'info': 'Profit less than expected. Consider reverse trade.'
-                                            }))
-                                            
-                                            self.reset_trade_flags()
+                                    if self.locked_ltp is None:
+                                        self.step_size = round(float(self.ltp_at_order) * self.step / 100, 2)
+                                        self.locked_ltp = round(float(self.ltp_at_order) - self.step_size, 2)
+                                        self.previous_ltp = float(self.ltp_at_order)
+                                        result['trailing_sl_initialized'] = True
+                                        result['locked_ltp'] = self.locked_ltp
+                                        result['step_size'] = self.step_size
+                                    
+                                    pnl_percent = round(((current_ltp - float(self.ltp_at_order)) / float(self.ltp_at_order)) * 100, 2)
+                                    result['pnl_percent'] = pnl_percent
+                                    result['trailing_sl_level'] = self.locked_ltp
+                                    
+                                    print(f"📈 Buy: {self.ltp_at_order} | Locked SL: {self.locked_ltp} | Live LTP: {current_ltp} | P&L: {pnl_percent}%")
+                                    
+                                    if (current_ltp <= self.locked_ltp and current_ltp < self.previous_ltp) or (current_ltp < self.locked_ltp):
+                                        print(f'✅ Sell Condition Met for token: {self.buy_token}')
+                                        result['trading_signal'] = 'SELL_CONDITION_MET'
+                                        result['signal_type'] = 'SELL'
+                                        self.sell_order_placed = True
                                     
                                     self.previous_ltp = current_ltp
+                                    
                                 except Exception as e:
-                                        await self.send(text_data=json.dumps({'error': f'Trailing SL error: {str(e)}'}))
-            
+                                    print(f'Trailing SL monitoring error: {str(e)}')
+                            
                             await self.send(text_data=json.dumps(result))
+                            
                             now = time.time()
                             if last_sent_time:
                                 time_diff = now - last_sent_time
-                                
+                                # Optional: Log if time between messages is too high
+                                if time_diff > 0.5:
+                                    print(f"⚠️ High message interval: {time_diff:.3f}s")
                             last_sent_time = now
 
         except Exception as e:
