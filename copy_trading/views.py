@@ -6,9 +6,9 @@ import requests
 import csv
 import requests
 import pandas as pd
-from .models import UpstoxFund , InstrumentCSV ,FundInstrument
+from .models import UpstoxFund , InstrumentCSV ,FundInstrument, ZerodhaInstrument
 from django.shortcuts import get_object_or_404
-from .serializers import UpstoxFundSerializer ,InstrumentCSVSerializer , FundInstrumentSerializer
+from .serializers import UpstoxFundSerializer ,InstrumentCSVSerializer , FundInstrumentSerializer , ZerodhaInstrumentSerializer
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.permissions import AllowAny
 from django.conf import settings
@@ -476,3 +476,37 @@ def delete_all_fund_instruments(request):
         return Response({
             "error": str(e)
         }, status=500)
+    
+
+
+
+
+class ZerodhaInstrumentView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        data = request.data.copy()
+        data['user'] = request.user.id
+        serializer = ZerodhaInstrumentSerializer(data=data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({'message': 'ZerodhaInstrument created successfully', 'data': serializer.data}, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def patch(self, request, pk):
+        instance = get_object_or_404(ZerodhaInstrument, pk=pk, user=request.user)
+        serializer = ZerodhaInstrumentSerializer(instance, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({'message': 'ZerodhaInstrument updated successfully', 'data': serializer.data}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    def delete(self, request, pk):
+        instance = get_object_or_404(ZerodhaInstrument, pk=pk, user=request.user)
+        instance.delete()
+        return Response({'message': 'ZerodhaInstrument deleted successfully'}, status=status.HTTP_200_OK)
+    
+    def get(self, request):
+        queryset = ZerodhaInstrument.objects.filter(user=request.user)
+        serializer = ZerodhaInstrumentSerializer(queryset, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)

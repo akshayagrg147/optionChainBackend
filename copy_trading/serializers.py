@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import UpstoxFund,InstrumentCSV,FundInstrument
+from .models import UpstoxFund,InstrumentCSV,FundInstrument , ZerodhaInstrument
 
 class UpstoxFundSerializer(serializers.ModelSerializer):
     class Meta:
@@ -23,7 +23,7 @@ class UpstoxFundSerializer(serializers.ModelSerializer):
     
     
 from rest_framework import serializers
-from .models import InstrumentCSV
+from .models import InstrumentCSV 
 
 class InstrumentCSVSerializer(serializers.ModelSerializer):
     class Meta:
@@ -34,4 +34,10 @@ class InstrumentCSVSerializer(serializers.ModelSerializer):
 class FundInstrumentSerializer(serializers.ModelSerializer):
     class Meta:
         model = FundInstrument
+        fields = '__all__'
+
+
+class ZerodhaInstrumentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ZerodhaInstrument
         fields = '__all__'

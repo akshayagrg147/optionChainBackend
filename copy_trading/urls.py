@@ -17,5 +17,7 @@ urlpatterns = [
                path('api/upload-nse-csv/', UploadCSVView.as_view(), name='upload-nse-csv'),
                path('api/download-log/', DownloadLogFileAPIView.as_view(), name='download-log'),
                path('fund-instruments/delete-all/', delete_all_fund_instruments, name='delete_all_fund_instruments'),
+               path('zerodha-instrument/', ZerodhaInstrumentView.as_view(), name='zerodha_instrument_list_create'),
+               path('zerodha-instrument/<int:pk>/', ZerodhaInstrumentView.as_view(), name='zerodha_instrument_detail'),
 ]
 
