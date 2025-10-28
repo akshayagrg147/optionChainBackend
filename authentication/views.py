@@ -50,3 +50,6 @@ class LoginViewSet(APIView):
                 return Response({'success': False, 'message': 'Invalid credentials'}, status=400)
         else:
             return Response({'success': False, 'message': 'Email and password are required'}, status=400)
+        
+
+

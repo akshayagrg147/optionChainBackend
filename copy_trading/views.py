@@ -510,3 +510,34 @@ class ZerodhaInstrumentView(APIView):
         queryset = ZerodhaInstrument.objects.filter(user=request.user)
         serializer = ZerodhaInstrumentSerializer(queryset, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+
+from kiteconnect import KiteConnect
+
+
+@api_view(['GET'])
+
+def get_funds(request):
+   
+    try:
+        api_key = request.data.get("api_key")
+        access_token = request.data.get("access_token")
+
+        if not api_key or not access_token:
+            return Response(
+                {"error": "Both 'api_key' and 'access_token' are requireds."},
+                status=400
+            )
+
+        # Initialize KiteConnect with user-provided API key
+        kite = KiteConnect(api_key=api_key)
+        kite.set_access_token(access_token.strip())
+
+        # Fetch funds (returns margin details)
+        funds = kite.margins()
+
+        return Response(funds, status=200)
+
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
