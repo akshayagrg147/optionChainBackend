@@ -516,7 +516,7 @@ class ZerodhaInstrumentView(APIView):
 from kiteconnect import KiteConnect
 
 
-@api_view(['GET'])
+@api_view(['GET','POST'])
 
 def get_funds(request):
    
