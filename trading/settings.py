@@ -142,6 +142,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:3000",
     "http://localhost:8000",
     "http://127.0.0.1:8000",
+    "https://cotp-demo.vercel.app/"
 ]
 
 CSRF_TRUSTED_ORIGINS = ['https://cotp.suprixsolution.in','http://localhost:8000']
