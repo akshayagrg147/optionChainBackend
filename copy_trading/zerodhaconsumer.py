@@ -64,8 +64,8 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
         self.lot = 75 
         self.reverse_token = None
         self.reverse_trading_symbol = None
-        self.spot_price_initialized = False  # NEW: Track if spot price is available
-        self.pending_option_ticks = []  # NEW: Buffer for early option ticks
+        self.spot_price_initialized = False  
+        self.pending_option_ticks = []  
         
     def log_order_event(self, account_name: str, title: str, data: dict):
         log_block = [f"\n{'='*20} {account_name.upper()} | {title} {'='*20}"]
@@ -111,7 +111,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             "PE": {"token": None, "trading_symbol": None}
         }
         
-        # First, find the exact instrument that was provided
+      
         provided_instrument = None
         for instrument in instruments:
             if instrument['tradingsymbol'].replace(" ", "").upper() == clean_symbol:
@@ -122,7 +122,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             print(f"❌ No instrument found for: {clean_symbol}")
             return result
         
-        # Store the provided instrument in the correct type
+    
         if provided_instrument['instrument_type'] == 'CE':
             result["CE"]["token"] = provided_instrument['instrument_token']
             result["CE"]["trading_symbol"] = provided_instrument['tradingsymbol']
@@ -132,7 +132,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             result["PE"]["trading_symbol"] = provided_instrument['tradingsymbol']
             print(f"✅ Provided PE: {result['PE']['trading_symbol']}, Token: {result['PE']['token']}")
         
-        # Now find the opposite instrument
+       
         opposite_type = "PE" if provided_instrument['instrument_type'] == "CE" else "CE"
         for instrument in instruments:
             if (instrument['strike'] == provided_instrument['strike'] and
@@ -191,16 +191,16 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             lot = payload.get("lot")
             reverse_Trade = payload.get("reverseTrade")
             
-            self.step = float(step) if step else 0.5
-            self.expected_profit_percent = float(expected_profit_percent) if expected_profit_percent else 10.0
-            self.target_market_priceCE = float(target_market_priceCE) if target_market_priceCE else None
-            self.target_market_pricePE = float(target_market_pricePE) if target_market_pricePE else None
-            self.quantityCE = int(quantityCE) if quantityCE else 75
-            self.quantityPE = int(quantityPE) if quantityPE else 75
-            self.total_amount = float(total_amount) if total_amount else 100.0
-            self.investable_amount = float(investable_amount) if investable_amount else 40.0
-            self.lot = int(lot) if lot else 75
-            self.reverse_Trade = reverse_Trade if reverse_Trade else "OFF"
+            self.step = float(step)
+            self.expected_profit_percent = float(expected_profit_percent) 
+            self.target_market_priceCE = float(target_market_priceCE) 
+            self.target_market_pricePE = float(target_market_pricePE) 
+            self.quantityCE = int(quantityCE)
+            self.quantityPE = int(quantityPE)
+            self.total_amount = float(total_amount)
+            self.investable_amount = float(investable_amount) 
+            self.lot = int(lot) 
+            self.reverse_Trade = reverse_Trade 
 
             print(f"📊 Trading Parameters: Lot={self.lot}, Investable Amount={self.investable_amount}")
 
@@ -217,7 +217,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 self.kite.set_access_token(access_token)
                 print("✅ KiteConnect initialized successfully")
                 
-                # Fetch user name for logging
+             
                 self.account_name = self.fetch_zerodha_user_name(api_key, access_token)
                 
             except Exception as e:
@@ -317,7 +317,10 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 "NIFTY": "NIFTY 50",
                 "BANKNIFTY": "NIFTY BANK",
                 "FINNIFTY": "NIFTY FIN SERVICE",
-                "MIDCPNIFTY": "NIFTY MID SELECT"
+                "MIDCPNIFTY": "NIFTY MID SELECT",
+                "SENSEX": "SENSEX",
+                "BANKEX": "BANKEX",
+                "SX50": "S&P BSE SENSEX 50"
             }
             
             index_tradingsymbol = index_map.get(self.index_name, "NIFTY 50")
@@ -332,7 +335,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 return
             print(f"✅ {self.index_name} token found: {self.nifty_token}")
 
-            # NEW: Fetch initial spot price BEFORE starting WebSocket
+            
             try:
                 nifty_quote = self.kite.quote([self.nifty_token])
                 if self.nifty_token in nifty_quote:
@@ -340,7 +343,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                     self.spot_price_initialized = True
                     print(f"✅ Initial spot price fetched: {self.latest_spot_price}")
                     
-                    # Send initial spot price to client
+                   
                     await self.send(text_data=json.dumps({
                         'type': 'SPOT_INITIAL',
                         'instrument_token': self.nifty_token,

@@ -308,7 +308,10 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 "NIFTY": "NIFTY 50",
                 "BANKNIFTY": "NIFTY BANK",
                 "FINNIFTY": "NIFTY FIN SERVICE",
-                "MIDCPNIFTY": "NIFTY MID SELECT"
+                "MIDCPNIFTY": "NIFTY MID SELECT",
+                "SENSEX": "SENSEX",
+                "BANKEX": "BANKEX",
+                "SX50": "S&P BSE SENSEX 50"
             }
             
             index_tradingsymbol = index_map.get(self.index_name, "NIFTY 50")

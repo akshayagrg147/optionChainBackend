@@ -3,7 +3,7 @@ import os
 
 API_KEY = "e74wrp5cse4shibt"
 API_SECRET = "dde81ug24m396drllbylt1ek3ocawstm"
-REDIRECT_URL = "http://127.0.0.1:8000/callback/"
+REDIRECT_URL = "http://127.0.0.1:5000/callback/"
 ACCESS_TOKEN_FILE = "zerodha_access_token.txt"
 
 # Step 1: Generate login URL
