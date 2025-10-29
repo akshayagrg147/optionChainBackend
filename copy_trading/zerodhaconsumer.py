@@ -36,7 +36,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
         self.reverse_trade = None
         self.toggle = True
         self.buy_token = None
-        self.buy_trading_symbol = None  
+        self.buy_trading_symbol = None  # Store trading symbol instead of token
         self.buy_quantity = None
         self.buy_in_ltp = None
         self.sell_in_ltp = None
@@ -46,12 +46,12 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
         self.nifty_token = None
         self.ce_token = None
         self.pe_token = None
-        self.ce_trading_symbol = None 
-        self.pe_trading_symbol = None
+        self.ce_trading_symbol = None  # Store trading symbol for CE
+        self.pe_trading_symbol = None  # Store trading symbol for PE
         self.ce_reverse_token = None
         self.pe_reverse_token = None
-        self.ce_reverse_trading_symbol = None
-        self.pe_reverse_trading_symbol = None  
+        self.ce_reverse_trading_symbol = None  # Store trading symbol for reverse CE
+        self.pe_reverse_trading_symbol = None  # Store trading symbol for reverse PE
         self.index_name = "NIFTY"
         self.instruments_cache = None
         self.account_name = None
@@ -59,13 +59,9 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
         self.expected_profit_percent = None
         self.target_market_priceCE = None
         self.target_market_pricePE = None
-        self.current_subscribed_tokens = [] 
-        self.spot_price_only_mode = False  
-        self.lot = 75 
-        self.reverse_token = None
-        self.reverse_trading_symbol = None
-        self.spot_price_initialized = False  
-        self.pending_option_ticks = []  
+        self.current_subscribed_tokens = []  # Track currently subscribed tokens
+        self.spot_price_only_mode = False   # Flag to track if we only need spot price
+        self.exchange_type = "NSE"  # Default exchange type
         
     def log_order_event(self, account_name: str, title: str, data: dict):
         log_block = [f"\n{'='*20} {account_name.upper()} | {title} {'='*20}"]
@@ -87,14 +83,27 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
     def get_instruments(self):
         if not self.instruments_cache:
             try:
-                self.instruments_cache = self.kite.instruments("NFO")
-                print(f"✅ Loaded {len(self.instruments_cache)} NFO instruments")
+                # For NSE indices - use NFO
+                nse_indices = ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"]
+                # For BSE indices - use BFO
+                bse_indices = ["SENSEX", "BANKEX", "SX50"]
+                
+                if self.index_name in nse_indices:
+                    self.instruments_cache = self.kite.instruments("NFO")
+                    print(f"✅ Loaded {len(self.instruments_cache)} NFO instruments for {self.index_name}")
+                elif self.index_name in bse_indices:
+                    self.instruments_cache = self.kite.instruments("BFO")
+                    print(f"✅ Loaded {len(self.instruments_cache)} BFO instruments for {self.index_name}")
+                else:
+                    print(f"❌ Unsupported index: {self.index_name}")
+                    return []
             except Exception as e:
                 print(f"❌ Error fetching instruments: {str(e)}")
                 return []
         return self.instruments_cache
     
     def get_instrument_details_by_trading_symbol(self, trading_symbol_input, index_name="NIFTY"):
+        """Get both token and trading symbol details for CE and PE"""
         print("🔍 Raw input symbol:", trading_symbol_input)
         
         if not self.kite:
@@ -111,44 +120,44 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             "PE": {"token": None, "trading_symbol": None}
         }
         
-      
-        provided_instrument = None
+        # First find the exact match
         for instrument in instruments:
             if instrument['tradingsymbol'].replace(" ", "").upper() == clean_symbol:
-                provided_instrument = instrument
-                break
-        
-        if not provided_instrument:
-            print(f"❌ No instrument found for: {clean_symbol}")
-            return result
-        
-    
-        if provided_instrument['instrument_type'] == 'CE':
-            result["CE"]["token"] = provided_instrument['instrument_token']
-            result["CE"]["trading_symbol"] = provided_instrument['tradingsymbol']
-            print(f"✅ Provided CE: {result['CE']['trading_symbol']}, Token: {result['CE']['token']}")
-        elif provided_instrument['instrument_type'] == 'PE':
-            result["PE"]["token"] = provided_instrument['instrument_token']
-            result["PE"]["trading_symbol"] = provided_instrument['tradingsymbol']
-            print(f"✅ Provided PE: {result['PE']['trading_symbol']}, Token: {result['PE']['token']}")
-        
-       
-        opposite_type = "PE" if provided_instrument['instrument_type'] == "CE" else "CE"
-        for instrument in instruments:
-            if (instrument['strike'] == provided_instrument['strike'] and
-                instrument['expiry'] == provided_instrument['expiry'] and
-                instrument['instrument_type'] == opposite_type and
-                instrument['name'] == provided_instrument['name']):
-                
-                if opposite_type == 'CE':
+                if instrument['instrument_type'] == 'CE':
                     result["CE"]["token"] = instrument['instrument_token']
                     result["CE"]["trading_symbol"] = instrument['tradingsymbol']
-                    print(f"✅ Found matching CE: {result['CE']['trading_symbol']}, Token: {result['CE']['token']}")
-                else:
+                    print(f"✅ CE Exact match found: {instrument['tradingsymbol']}, Token: {result['CE']['token']}")
+                elif instrument['instrument_type'] == 'PE':
                     result["PE"]["token"] = instrument['instrument_token']
                     result["PE"]["trading_symbol"] = instrument['tradingsymbol']
-                    print(f"✅ Found matching PE: {result['PE']['trading_symbol']}, Token: {result['PE']['token']}")
+                    print(f"✅ PE Exact match found: {instrument['tradingsymbol']}, Token: {result['PE']['token']}")
                 break
+        
+        # Find the opposite instrument
+        if result["CE"]["token"] or result["PE"]["token"]:
+            found_instrument = None
+            for instrument in instruments:
+                if instrument['instrument_token'] == (result["CE"]["token"] or result["PE"]["token"]):
+                    found_instrument = instrument
+                    break
+            
+            if found_instrument:
+                opposite_type = "PE" if found_instrument['instrument_type'] == "CE" else "CE"
+                for instrument in instruments:
+                    if (instrument['strike'] == found_instrument['strike'] and
+                        instrument['expiry'] == found_instrument['expiry'] and
+                        instrument['instrument_type'] == opposite_type and
+                        instrument['name'] == found_instrument['name']):
+                        
+                        if opposite_type == 'CE':
+                            result["CE"]["token"] = instrument['instrument_token']
+                            result["CE"]["trading_symbol"] = instrument['tradingsymbol']
+                            print(f"✅ CE Opposite match found: {instrument['tradingsymbol']}, Token: {result['CE']['token']}")
+                        else:
+                            result["PE"]["token"] = instrument['instrument_token']
+                            result["PE"]["trading_symbol"] = instrument['tradingsymbol']
+                            print(f"✅ PE Opposite match found: {instrument['tradingsymbol']}, Token: {result['PE']['token']}")
+                        break
         
         return result
 
@@ -191,24 +200,23 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             lot = payload.get("lot")
             reverse_Trade = payload.get("reverseTrade")
             
-            self.step = float(step)
-            self.expected_profit_percent = float(expected_profit_percent) 
-            self.target_market_priceCE = float(target_market_priceCE) 
-            self.target_market_pricePE = float(target_market_pricePE) 
-            self.quantityCE = int(quantityCE)
-            self.quantityPE = int(quantityPE)
-            self.total_amount = float(total_amount)
-            self.investable_amount = float(investable_amount) 
-            self.lot = int(lot) 
-            self.reverse_Trade = reverse_Trade 
-
-            print(f"📊 Trading Parameters: Lot={self.lot}, Investable Amount={self.investable_amount}")
+            # Store trading parameters
+            self.step = step
+            self.expected_profit_percent = expected_profit_percent
+            self.target_market_priceCE = float(target_market_priceCE) if target_market_priceCE else None
+            self.target_market_pricePE = float(target_market_pricePE) if target_market_pricePE else None
+            self.quantityCE = quantityCE
+            self.quantityPE = quantityPE
+            self.total_amount = total_amount
+            self.investable_amount = investable_amount
+            self.lot = lot
+            self.reverse_Trade = reverse_Trade
 
             if not api_key or not access_token or not trading_symbol:
                 await self.send(text_data=json.dumps({'error': 'Missing required fields: api_key, access_token, trading_symbol'}))
                 return
                 
-            if not target_market_priceCE or not target_market_pricePE:
+            if not target_market_priceCE or not target_market_pricePE or not step or not quantityCE or not quantityPE:
                 await self.send(text_data=json.dumps({'error': 'Missing trading parameters'}))
                 return
 
@@ -217,7 +225,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 self.kite.set_access_token(access_token)
                 print("✅ KiteConnect initialized successfully")
                 
-             
+                # Fetch user name for logging
                 self.account_name = self.fetch_zerodha_user_name(api_key, access_token)
                 
             except Exception as e:
@@ -240,8 +248,10 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
         """Update WebSocket subscription to only necessary tokens"""
         if self.kws and self.kws.is_connected():
             try:
+                
                 if self.current_subscribed_tokens:
                     self.kws.unsubscribe(self.current_subscribed_tokens)
+                
                 
                 self.kws.subscribe(new_tokens)
                 self.kws.set_mode(self.kws.MODE_FULL, new_tokens)
@@ -255,17 +265,21 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             except Exception as e:
                 print(f"❌ Error updating subscription: {str(e)}")
 
-    async def place_zerodha_order(self, transaction_type, trading_symbol, quantity, order_type="MARKET", price=0, exchange=None, product=None, validity=None):
+    async def place_zerodha_order(self, transaction_type, trading_symbol, quantity, order_type="MARKET", price=0):
         """Place order using Zerodha KiteConnect API with trading symbol"""
         try:
-            if not exchange:
-                exchange = self.kite.EXCHANGE_NFO
+            # Determine exchange from index type
+            nse_indices = ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"]
+            bse_indices = ["SENSEX", "BANKEX", "SX50"]
             
-            if not product:
-                product = self.kite.PRODUCT_NRML
-            if not validity:
-                validity = self.kite.VALIDITY_DAY
-                
+            if self.index_name in nse_indices:
+                exchange = self.kite.EXCHANGE_NFO
+            elif self.index_name in bse_indices:
+                exchange = self.kite.EXCHANGE_BFO
+            else:
+                # Fallback to symbol prefix
+                exchange = trading_symbol[:3]
+            
             if order_type.upper() == "MARKET":
                 order_id = self.kite.place_order(
                     variety=self.kite.VARIETY_REGULAR,
@@ -274,8 +288,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                     transaction_type=transaction_type,
                     quantity=quantity,
                     order_type=self.kite.ORDER_TYPE_MARKET,
-                    product=product,
-                    validity=validity
+                    product=self.kite.PRODUCT_MIS if quantity % self.lot == 0 else self.kite.PRODUCT_CNC
                 )
             else:
                 order_id = self.kite.place_order(
@@ -286,8 +299,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                     quantity=quantity,
                     order_type=self.kite.ORDER_TYPE_LIMIT,
                     price=price,
-                    product=product,
-                    validity=validity
+                    product=self.kite.PRODUCT_MIS if quantity % self.lot == 0 else self.kite.PRODUCT_CNC
                 )
             
             print(f"✅ Order placed successfully. Order ID: {order_id}")
@@ -298,6 +310,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             raise e
 
     async def fetch_order_status(self, order_id):
+        """Fetch order status from Zerodha"""
         try:
             orders = self.kite.orders()
             for order in orders:
@@ -310,22 +323,40 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
 
     async def fetch_and_stream_data(self, trading_symbol, trading_symbol_2):
         try:
-            nse_instruments = self.kite.instruments("NSE")
+            # Determine exchange and fetch instruments
+            nse_indices = ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"]
+            bse_indices = ["SENSEX", "BANKEX", "SX50"]
+            
+            if self.index_name in nse_indices:
+                instruments = self.kite.instruments("NSE")
+                self.exchange_type = "NSE"
+            elif self.index_name in bse_indices:
+                instruments = self.kite.instruments("BSE")
+                self.exchange_type = "BSE"
+            else:
+                await self.send(text_data=json.dumps({'error': f'Unsupported index: {self.index_name}'}))
+                return
+            
             self.nifty_token = None
             
             index_map = {
+                # NSE Indices
                 "NIFTY": "NIFTY 50",
                 "BANKNIFTY": "NIFTY BANK",
                 "FINNIFTY": "NIFTY FIN SERVICE",
                 "MIDCPNIFTY": "NIFTY MID SELECT",
+                # BSE Indices
                 "SENSEX": "SENSEX",
                 "BANKEX": "BANKEX",
                 "SX50": "S&P BSE SENSEX 50"
             }
             
-            index_tradingsymbol = index_map.get(self.index_name, "NIFTY 50")
-            
-            for inst in nse_instruments:
+            index_tradingsymbol = index_map.get(self.index_name)
+            if not index_tradingsymbol:
+                await self.send(text_data=json.dumps({'error': f'Index {self.index_name} not found in mapping'}))
+                return
+
+            for inst in instruments:
                 if inst['tradingsymbol'] == index_tradingsymbol:
                     self.nifty_token = inst['instrument_token']
                     break
@@ -335,27 +366,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 return
             print(f"✅ {self.index_name} token found: {self.nifty_token}")
 
-            
-            try:
-                nifty_quote = self.kite.quote([self.nifty_token])
-                if self.nifty_token in nifty_quote:
-                    self.latest_spot_price = nifty_quote[self.nifty_token]['last_price']
-                    self.spot_price_initialized = True
-                    print(f"✅ Initial spot price fetched: {self.latest_spot_price}")
-                    
-                   
-                    await self.send(text_data=json.dumps({
-                        'type': 'SPOT_INITIAL',
-                        'instrument_token': self.nifty_token,
-                        'ltp': self.latest_spot_price,
-                        'spot_price': self.latest_spot_price,
-                        'timestamp': datetime.now().strftime('%H:%M:%S.%f')[:-3],
-                        'index_name': self.index_name,
-                        'message': 'Initial spot price loaded'
-                    }))
-            except Exception as e:
-                print(f"⚠️ Could not fetch initial spot price: {e}")
-
+            # Get instrument details for both trading symbols
             ce_details = self.get_instrument_details_by_trading_symbol(trading_symbol, self.index_name)
             
             if trading_symbol_2:
@@ -369,6 +380,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                     pe_details["CE"]["token"] = ce_details["CE"]["token"]
                     pe_details["CE"]["trading_symbol"] = ce_details["CE"]["trading_symbol"]
             
+            # Store token and trading symbol details
             self.ce_token = ce_details["CE"]["token"]
             self.ce_trading_symbol = ce_details["CE"]["trading_symbol"]
             self.ce_reverse_token = ce_details["PE"]["token"]
@@ -384,6 +396,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             print("🎯 PE Token:", self.pe_token, "PE Trading Symbol:", self.pe_trading_symbol)
             print("🎯 PE REVERSE Token:", self.pe_reverse_token, "PE Reverse Trading Symbol:", self.pe_reverse_trading_symbol)
 
+            # Initially subscribe only to spot and both option tokens for buy conditions
             initial_tokens = [self.ce_token, self.pe_token, self.nifty_token]
             initial_tokens = [token for token in initial_tokens if token is not None]
 
@@ -481,150 +494,96 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             await self.send(text_data=json.dumps({'error': error_msg}))
 
     async def process_ticks(self, ticks):
-        """NEW: Improved tick processing that ensures spot price is always available"""
         current_ts = int(time.time() * 1000)
         timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
         
-        # NEW: Process NIFTY ticks first to update spot price immediately
-        nifty_ticks = [tick for tick in ticks if tick['instrument_token'] == self.nifty_token]
-        option_ticks = [tick for tick in ticks if tick['instrument_token'] in [self.ce_token, self.pe_token]]
-        
-        # Process NIFTY ticks first
-        for tick in nifty_ticks:
-            await self.process_nifty_tick(tick, timestamp)
-        
-        # Process option ticks with guaranteed spot price
-        for tick in option_ticks:
-            await self.process_option_tick(tick, timestamp)
-        
-        # NEW: Process any pending option ticks now that spot price might be available
-        await self.process_pending_option_ticks(timestamp)
-
-    async def process_nifty_tick(self, tick, timestamp):
-        """Process NIFTY tick and update spot price"""
-        instrument_token = tick['instrument_token']
-        ltp = tick.get('last_price', 0)
-        volume = tick.get('volume', 0)
-        change = tick.get('change', 0)
-        
-        self.latest_spot_price = ltp
-        self.spot_price_initialized = True
-        
-        # Always send spot price update
-        result = {
-            'type': 'SPOT',
-            'instrument_token': instrument_token,
-            'ltp': ltp,
-            'volume': volume,
-            'timestamp': timestamp,
-            'spot_price': ltp,
-            'index_name': self.index_name,
-            'change': change
-        }
-        await self.send(text_data=json.dumps(result))
-        
-        # Check buy conditions with fresh spot price
-        if not self.order_placedCE and not self.order_placedPE:
-            await self.check_buy_conditions(instrument_token, ltp, timestamp)
-
-    async def process_option_tick(self, tick, timestamp):
-        """Process CE/PE tick with guaranteed spot price handling"""
-        instrument_token = tick['instrument_token']
-        ltp = tick.get('last_price', 0)
-        volume = tick.get('volume', 0)
-        oi = tick.get('oi', 0)
-        change = tick.get('change', 0)
-        
-        # If we already have an order placed, process bought token
-        if self.order_placedCE or self.order_placedPE:
-            if instrument_token == self.buy_token:
-                await self.process_bought_token_tick(instrument_token, ltp, timestamp, volume, oi, change)
-            return
-        
-        # For option ticks without orders, ensure spot price is available
-        if not self.spot_price_initialized or self.latest_spot_price is None:
-            # NEW: Buffer the option tick until spot price is available
-            self.pending_option_ticks.append((tick, timestamp))
-            print(f"⏳ Buffering option tick - waiting for spot price. Current buffer: {len(self.pending_option_ticks)}")
-            return
-        
-        # Spot price is available - process the option tick
-        instrument_type = "CE" if instrument_token == self.ce_token else "PE"
-        
-        result = {
-            'type': instrument_type,
-            'instrument_token': instrument_token,
-            'ltp': ltp,
-            'volume': volume,
-            'oi': oi,
-            'spot_price': self.latest_spot_price,  # Guaranteed non-null
-            'timestamp': timestamp,
-            'index_name': self.index_name,
-            'change': change
-        }
-        await self.send(text_data=json.dumps(result))
-
-    async def process_pending_option_ticks(self, timestamp):
-        """Process any buffered option ticks now that spot price is available"""
-        if not self.spot_price_initialized or self.latest_spot_price is None:
-            return
-            
-        if self.pending_option_ticks:
-            print(f"🔄 Processing {len(self.pending_option_ticks)} buffered option ticks")
-            
-        processed_ticks = []
-        for tick, tick_timestamp in self.pending_option_ticks:
+        for tick in ticks:
             instrument_token = tick['instrument_token']
             ltp = tick.get('last_price', 0)
             volume = tick.get('volume', 0)
             oi = tick.get('oi', 0)
             change = tick.get('change', 0)
             
-            instrument_type = "CE" if instrument_token == self.ce_token else "PE"
+            # Always process spot price for buy conditions
+            if instrument_token == self.nifty_token:
+                self.latest_spot_price = ltp
+                if not self.order_placedCE and not self.order_placedPE:
+                    # Only send spot price if we haven't placed any orders yet
+                    result = {
+                        'type': 'SPOT',
+                        'instrument_token': instrument_token,
+                        'ltp': ltp,
+                        'volume': volume,
+                        'timestamp': timestamp,
+                        'spot_price': ltp,
+                        'index_name': self.index_name,
+                        'exchange': self.exchange_type,
+                        'change': change
+                    }
+                    await self.send(text_data=json.dumps(result))
+                
+                # Check for buy conditions using spot price
+                await self.check_buy_conditions(instrument_token, ltp, timestamp)
+                continue
             
+            # Process option ticks based on current state
+            if self.order_placedCE or self.order_placedPE:
+                # After order placed, only process the bought token
+                if instrument_token == self.buy_token:
+                    await self.process_bought_token_tick(instrument_token, ltp, timestamp, volume, oi, change)
+            else:
+                # Before order placement, process both CE and PE for display
+                instrument_type = "UNKNOWN"
+                if instrument_token == self.ce_token:
+                    instrument_type = "CE"
+                elif instrument_token == self.pe_token:
+                    instrument_type = "PE"
+                
+                if instrument_type in ["CE", "PE"]:
+                    result = {
+                        'type': instrument_type,
+                        'instrument_token': instrument_token,
+                        'ltp': ltp,
+                        'volume': volume,
+                        'oi': oi,
+                        'spot_price': self.latest_spot_price,
+                        'timestamp': timestamp,
+                        'index_name': self.index_name,
+                        'exchange': self.exchange_type,
+                        'change': change
+                    }
+                    await self.send(text_data=json.dumps(result))
+
+    async def process_bought_token_tick(self, instrument_token, ltp, timestamp, volume, oi, change):
+        """Process ticks only for the bought token"""
+        try:
+            current_ltp = float(ltp)
+            
+            # Send the tick data to frontend
             result = {
-                'type': instrument_type,
+                'type': 'BOUGHT_OPTION',
                 'instrument_token': instrument_token,
                 'ltp': ltp,
                 'volume': volume,
                 'oi': oi,
                 'spot_price': self.latest_spot_price,
-                'timestamp': tick_timestamp,  # Use original timestamp
-                'index_name': self.index_name,
-                'change': change,
-                'buffered': True  # Flag to indicate this was buffered
-            }
-            await self.send(text_data=json.dumps(result))
-            processed_ticks.append((tick, tick_timestamp))
-        
-        # Remove processed ticks from buffer
-        for tick_data in processed_ticks:
-            if tick_data in self.pending_option_ticks:
-                self.pending_option_ticks.remove(tick_data)
-
-    async def process_bought_token_tick(self, instrument_token, ltp, timestamp, volume, oi, change):
-        try:
-            current_ltp = float(ltp)
-            
-            result = {
-                'type': 'BOUGHT_OPTION',
-                'instrument_token': instrument_token,
-                'ltp': ltp,
-                'spot_price': self.latest_spot_price,
                 'timestamp': timestamp,
                 'index_name': self.index_name,
+                'exchange': self.exchange_type,
                 'change': change,
                 'buy_price': self.buy_in_ltp,
                 'locked_ltp': self.locked_ltp
             }
             await self.send(text_data=json.dumps(result))
             
+            # Process for trailing SL
             await self.process_trailing_sl(instrument_token, current_ltp, timestamp)
             
         except Exception as e:
             print(f"❌ Error processing bought token tick: {str(e)}")
 
     async def process_trailing_sl(self, instrument_token, current_ltp, timestamp):
+        """Process trailing stop loss for bought token"""
         try:
             if not self.sell_order_placed and self.ltp_at_order is not None:
                 
@@ -635,7 +594,6 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                     self.previous_ltp = float(self.ltp_at_order)
                     
                     await self.send(text_data=json.dumps({
-                        'spot_price': self.latest_spot_price,
                         'init_SL': True,    
                         'locked_LTP': self.locked_ltp,
                         'step_size': self.step_size
@@ -643,6 +601,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 
                 print(f"📈 Buy: {self.ltp_at_order} | Locked SL: {self.locked_ltp} | Live LTP: {current_ltp}")
                 
+                # Update trailing SL
                 if current_ltp > self.previous_ltp:
                     while current_ltp >= self.locked_ltp + self.step_size:
                         self.locked_ltp = round(self.locked_ltp + self.step_size, 2)
@@ -653,6 +612,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 pnl_percent = round(((current_ltp - float(self.ltp_at_order)) / float(self.ltp_at_order)) * 100, 2)
                 print(f"📈 Buy: {self.ltp_at_order} | Locked SL: {self.locked_ltp} | Live LTP: {current_ltp} | P&L: {pnl_percent}%")
 
+                # Send P&L update
                 await self.send(text_data=json.dumps({
                     'pnl_update': True,
                     'current_ltp': current_ltp,
@@ -660,6 +620,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                     'locked_ltp': self.locked_ltp
                 }))
 
+                # Check sell condition
                 if ((current_ltp <= self.locked_ltp and current_ltp < self.previous_ltp) or 
                     (current_ltp < self.locked_ltp)):
                     
@@ -674,28 +635,21 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
     async def check_buy_conditions(self, instrument_token, ltp, timestamp):
         """Check conditions for placing buy orders"""
         try:
-            # NEW: Use fresh API call for critical trading decisions
-            try:
-                nifty_quote = self.kite.quote([self.nifty_token])
-                current_spot = nifty_quote[self.nifty_token]['last_price']
-                print(f"🎯 Fresh spot price for trading decision: {current_spot}")
-            except Exception as e:
-                print(f"⚠️ Using cached spot price for trading: {self.latest_spot_price}")
-                current_spot = self.latest_spot_price
-          
+            # CE Buy Condition
             if (not self.order_placedCE and not self.order_placedPE and 
-                current_spot is not None and 
-                self.target_market_priceCE <= float(current_spot)):
+                self.latest_spot_price is not None and 
+                self.target_market_priceCE <= float(self.latest_spot_price)):
                 
-                print(f"✅ CE Buy Condition Met: {current_spot}, Target: {self.target_market_priceCE}")
+                print(f"✅ CE Buy Condition Met: {self.latest_spot_price}, Target: {self.target_market_priceCE}")
                 await self.place_buy_order(self.ce_token, self.ce_trading_symbol, self.quantityCE, "CE", timestamp)
                 return
             
+            # PE Buy Condition  
             if (not self.order_placedPE and not self.order_placedCE and
-                current_spot is not None and
-                self.target_market_pricePE >= float(current_spot)):
+                self.latest_spot_price is not None and
+                self.target_market_pricePE >= float(self.latest_spot_price)):
                 
-                print(f"✅ PE Buy Condition Met: {current_spot}, Target: {self.target_market_pricePE}")
+                print(f"✅ PE Buy Condition Met: {self.latest_spot_price}, Target: {self.target_market_pricePE}")
                 await self.place_buy_order(self.pe_token, self.pe_trading_symbol, self.quantityPE, "PE", timestamp)
                 
         except Exception as e:
@@ -709,19 +663,32 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             if not trading_symbol:
                 raise ValueError(f"Trading symbol not found for {option_type}")
             
+            # Determine exchange for order placement
+            nse_indices = ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"]
+            bse_indices = ["SENSEX", "BANKEX", "SX50"]
+            
+            if self.index_name in nse_indices:
+                exchange = self.kite.EXCHANGE_NFO
+            elif self.index_name in bse_indices:
+                exchange = self.kite.EXCHANGE_BFO
+            else:
+                exchange = self.kite.EXCHANGE_NFO  # Default to NFO
+            
             order_id = await self.place_zerodha_order(
                 transaction_type=self.kite.TRANSACTION_TYPE_BUY,
+                exchange=exchange,
                 trading_symbol=trading_symbol,
                 quantity=quantity,
                 order_type=self.kite.ORDER_TYPE_MARKET,
-                exchange=self.kite.EXCHANGE_NFO,
                 product=self.kite.PRODUCT_NRML,
                 validity=self.kite.VALIDITY_DAY
             )
             
             if order_id:
+                # Wait a bit for order to be processed
                 await asyncio.sleep(0)
                 
+                # Fetch order details
                 order_details = await self.fetch_order_status(order_id)
                 
                 if order_details and order_details['status'] == 'COMPLETE':
@@ -733,6 +700,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                     self.buy_in_ltp = float(order_details['average_price'])
                     self.ltp_at_order = self.buy_in_ltp
                     
+                    # Set reverse token and trading symbol based on option type
                     if option_type == "CE":
                         self.reverse_token = self.ce_reverse_token
                         self.reverse_trading_symbol = self.ce_reverse_trading_symbol
@@ -740,6 +708,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                         self.reverse_token = self.pe_reverse_token
                         self.reverse_trading_symbol = self.pe_reverse_trading_symbol
                     
+                    # Update subscription to only the bought token and spot
                     new_tokens = [self.buy_token, self.nifty_token]
                     await self.update_subscription(new_tokens)
                     
@@ -789,17 +758,29 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             if not self.buy_trading_symbol:
                 raise ValueError("Buy trading symbol not found")
             
+            # Determine exchange for order placement
+            nse_indices = ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"]
+            bse_indices = ["SENSEX", "BANKEX", "SX50"]
+            
+            if self.index_name in nse_indices:
+                exchange = self.kite.EXCHANGE_NFO
+            elif self.index_name in bse_indices:
+                exchange = self.kite.EXCHANGE_BFO
+            else:
+                exchange = self.kite.EXCHANGE_NFO  # Default to NFO
+            
             order_id = await self.place_zerodha_order(
                 transaction_type=self.kite.TRANSACTION_TYPE_SELL,
                 trading_symbol=self.buy_trading_symbol,
                 quantity=self.buy_quantity,
                 order_type=self.kite.ORDER_TYPE_MARKET,
-                exchange=self.kite.EXCHANGE_NFO,
+                exchange=exchange,
                 product=self.kite.PRODUCT_NRML,
                 validity=self.kite.VALIDITY_DAY
             )
             
             if order_id:
+                # Wait for order processing
                 await asyncio.sleep(0)
                 
                 order_details = await self.fetch_order_status(order_id)
@@ -831,9 +812,11 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                         "pnl_percentage": PnL,
                     }))
                     
+                    # Handle reverse trade if enabled
                     if self.reverse_Trade == "ON" and PnL < self.expected_profit_percent:
                         await self.execute_reverse_trade(PnL)
                     else:
+                        # Reset flags if no reverse trade
                         self.reset_trade_flags()
                         await self.send(text_data=json.dumps({
                             'message': 'Trading completed - No reverse trade'
@@ -857,6 +840,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             await self.send(text_data=json.dumps({'error': f'Sell order error: {str(e)}'}))
 
     async def execute_reverse_trade(self, PnL):
+        """Execute reverse trade after sell"""
         try:
             print("🔄 Executing reverse trade...")
             
@@ -865,12 +849,6 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 await self.send(text_data=json.dumps({'error': 'Reverse trading symbol not found'}))
                 return
             
-            if self.lot is None:
-                print("⚠️ Lot size is None, using default value 75")
-                
-            if self.investable_amount is None:
-                print("⚠️ Investable amount is None, using default value 40")
-                
             self.previous_ltp = None
             self.ltp_at_order = None
             self.locked_ltp = None
@@ -878,38 +856,13 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             self.buy_token = self.reverse_token
             self.buy_trading_symbol = self.reverse_trading_symbol
             
-            if not self.reverse_trading_symbol:
-                print("❌ Reverse trading symbol is None")
-                await self.send(text_data=json.dumps({'error': 'Reverse trading symbol is None'}))
-                return
+            # Get current LTP for the reverse token
+            quote = self.kite.quote([self.buy_token])
+            if self.buy_token in quote:
+                rest_ltp = quote[self.buy_token]['last_price']
+                self.ltp_at_order = rest_ltp
             
-            instrument_key = f"NFO:{self.reverse_trading_symbol}"
-            print(f"🔍 Fetching LTP for: {instrument_key}")
-            
-            try:
-                quote = self.kite.quote([instrument_key])
-                print(f"📊 Quote response: {quote}")
-                
-                if instrument_key in quote:
-                    instrument_data = quote[instrument_key]
-                    rest_ltp = instrument_data.get('last_price')
-                    if rest_ltp:
-                        self.ltp_at_order = rest_ltp
-                        print(f"✅ LTP fetched successfully: {self.ltp_at_order}")
-                    else:
-                        print("❌ Last price not found in quote data")
-                        await self.send(text_data=json.dumps({'error': 'Last price not found in quote data'}))
-                        return
-                else:
-                    print(f"❌ Instrument {instrument_key} not found in quote response")
-                    await self.send(text_data=json.dumps({'error': f'Instrument {instrument_key} not found in quote'}))
-                    return
-                    
-            except Exception as e:
-                print(f"❌ Error fetching quote: {str(e)}")
-                await self.send(text_data=json.dumps({'error': f'Quote fetch error: {str(e)}'}))
-                return
-            
+            # Calculate new quantity based on P&L
             investable_amount = float(self.investable_amount)
             if PnL > 0:
                 new_investable = investable_amount + (PnL / 100) * investable_amount
@@ -918,34 +871,35 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             
             print(f'💰 New investable amount: {new_investable}')
             print(f'📊 Current LTP: {self.ltp_at_order}')
-            print(f'📦 Lot size: {self.lot}')
             
-            if self.ltp_at_order and self.ltp_at_order > 0:
-                try:
-                    lots_affordable = new_investable // (self.ltp_at_order * self.lot)
-                    quantity = int(lots_affordable * self.lot)
-                    print(f'📦 Reverse trade quantity: {quantity} (lots: {lots_affordable})')
-                except Exception as e:
-                    print(f"❌ Error calculating quantity: {str(e)}")
-                    await self.send(text_data=json.dumps({'error': f'Quantity calculation error: {str(e)}'}))
-                    return
-            else:
-                print("❌ Invalid LTP for quantity calculation")
-                await self.send(text_data=json.dumps({'error': 'Invalid LTP for quantity calculation'}))
-                return
+            self.rq = self.lot * (new_investable // (self.ltp_at_order * self.lot))
+            quantity = int(self.rq)
+            print(f'📦 Reverse trade quantity: {quantity}')
             
             if quantity > 0:
                 print(f"🎯 Executing reverse trade with token: {self.reverse_token}, Trading Symbol: {self.reverse_trading_symbol}")
                 
+                # Update subscription to the reverse token
                 new_tokens = [self.reverse_token, self.nifty_token]
                 await self.update_subscription(new_tokens)
+                
+                # Determine exchange for reverse trade
+                nse_indices = ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"]
+                bse_indices = ["SENSEX", "BANKEX", "SX50"]
+                
+                if self.index_name in nse_indices:
+                    exchange = self.kite.EXCHANGE_NFO
+                elif self.index_name in bse_indices:
+                    exchange = self.kite.EXCHANGE_BFO
+                else:
+                    exchange = self.kite.EXCHANGE_NFO  # Default to NFO
                 
                 order_id = await self.place_zerodha_order(
                     transaction_type=self.kite.TRANSACTION_TYPE_BUY,
                     trading_symbol=self.reverse_trading_symbol,
                     quantity=quantity,
                     order_type=self.kite.ORDER_TYPE_MARKET,
-                    exchange=self.kite.EXCHANGE_NFO,    
+                    exchange=exchange,    
                     product=self.kite.PRODUCT_NRML,
                     validity=self.kite.VALIDITY_DAY
                 )
@@ -963,6 +917,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                         self.toggle = False
                         self.investable_amount = new_investable
                         
+                        # Reset sell flag to continue tracking
                         self.sell_order_placed = False
                         self.locked_ltp = None
                         self.previous_ltp = None
