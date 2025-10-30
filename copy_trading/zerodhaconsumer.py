@@ -265,7 +265,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             except Exception as e:
                 print(f"❌ Error updating subscription: {str(e)}")
 
-    async def place_zerodha_order(self, transaction_type, trading_symbol, quantity, order_type="MARKET", price=0):
+    async def place_zerodha_order(self, transaction_type, trading_symbol, quantity, order_type="MARKET", price=0, product=None, validity=None):
         """Place order using Zerodha KiteConnect API with trading symbol"""
         try:
             # Determine exchange from index type
@@ -277,8 +277,14 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             elif self.index_name in bse_indices:
                 exchange = self.kite.EXCHANGE_BFO
             else:
-                # Fallback to symbol prefix
-                exchange = trading_symbol[:3]
+                # Fallback to NFO
+                exchange = self.kite.EXCHANGE_NFO
+            
+            # Set default product and validity if not provided
+            if product is None:
+                product = self.kite.PRODUCT_NRML
+            if validity is None:
+                validity = self.kite.VALIDITY_DAY
             
             if order_type.upper() == "MARKET":
                 order_id = self.kite.place_order(
@@ -288,7 +294,8 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                     transaction_type=transaction_type,
                     quantity=quantity,
                     order_type=self.kite.ORDER_TYPE_MARKET,
-                    product=self.kite.PRODUCT_MIS if quantity % self.lot == 0 else self.kite.PRODUCT_CNC
+                    product=product,
+                    validity=validity
                 )
             else:
                 order_id = self.kite.place_order(
@@ -299,7 +306,8 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                     quantity=quantity,
                     order_type=self.kite.ORDER_TYPE_LIMIT,
                     price=price,
-                    product=self.kite.PRODUCT_MIS if quantity % self.lot == 0 else self.kite.PRODUCT_CNC
+                    product=product,
+                    validity=validity
                 )
             
             print(f"✅ Order placed successfully. Order ID: {order_id}")
@@ -395,6 +403,8 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             print("🎯 CE REVERSE Token:", self.ce_reverse_token, "CE Reverse Trading Symbol:", self.ce_reverse_trading_symbol)
             print("🎯 PE Token:", self.pe_token, "PE Trading Symbol:", self.pe_trading_symbol)
             print("🎯 PE REVERSE Token:", self.pe_reverse_token, "PE Reverse Trading Symbol:", self.pe_reverse_trading_symbol)
+
+        
 
             # Initially subscribe only to spot and both option tokens for buy conditions
             initial_tokens = [self.ce_token, self.pe_token, self.nifty_token]
@@ -663,20 +673,8 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             if not trading_symbol:
                 raise ValueError(f"Trading symbol not found for {option_type}")
             
-            # Determine exchange for order placement
-            nse_indices = ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"]
-            bse_indices = ["SENSEX", "BANKEX", "SX50"]
-            
-            if self.index_name in nse_indices:
-                exchange = self.kite.EXCHANGE_NFO
-            elif self.index_name in bse_indices:
-                exchange = self.kite.EXCHANGE_BFO
-            else:
-                exchange = self.kite.EXCHANGE_NFO  # Default to NFO
-            
             order_id = await self.place_zerodha_order(
                 transaction_type=self.kite.TRANSACTION_TYPE_BUY,
-                exchange=exchange,
                 trading_symbol=trading_symbol,
                 quantity=quantity,
                 order_type=self.kite.ORDER_TYPE_MARKET,
@@ -758,23 +756,11 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             if not self.buy_trading_symbol:
                 raise ValueError("Buy trading symbol not found")
             
-            # Determine exchange for order placement
-            nse_indices = ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"]
-            bse_indices = ["SENSEX", "BANKEX", "SX50"]
-            
-            if self.index_name in nse_indices:
-                exchange = self.kite.EXCHANGE_NFO
-            elif self.index_name in bse_indices:
-                exchange = self.kite.EXCHANGE_BFO
-            else:
-                exchange = self.kite.EXCHANGE_NFO  # Default to NFO
-            
             order_id = await self.place_zerodha_order(
                 transaction_type=self.kite.TRANSACTION_TYPE_SELL,
                 trading_symbol=self.buy_trading_symbol,
                 quantity=self.buy_quantity,
                 order_type=self.kite.ORDER_TYPE_MARKET,
-                exchange=exchange,
                 product=self.kite.PRODUCT_NRML,
                 validity=self.kite.VALIDITY_DAY
             )
@@ -856,12 +842,34 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             self.buy_token = self.reverse_token
             self.buy_trading_symbol = self.reverse_trading_symbol
             
-            # Get current LTP for the reverse token
-            quote = self.kite.quote([self.buy_token])
-            if self.buy_token in quote:
-                rest_ltp = quote[self.buy_token]['last_price']
-                self.ltp_at_order = rest_ltp
+            instrument_key = f"NFO:{self.reverse_trading_symbol}"
+            print(f"🔍 Fetching LTP for: {instrument_key}")
             
+            try:
+                quote = self.kite.quote([instrument_key])
+                print(f"📊 Quote response: {quote}")
+                
+                if instrument_key in quote:
+                    instrument_data = quote[instrument_key]
+                    rest_ltp = instrument_data.get('last_price')
+                    if rest_ltp:
+                        self.ltp_at_order = rest_ltp
+                        print(f"✅ LTP fetched successfully: {self.ltp_at_order}")
+                    else:
+                        print("❌ Last price not found in quote data")
+                        await self.send(text_data=json.dumps({'error': 'Last price not found in quote data'}))
+                        return
+                else:
+                    print(f"❌ Instrument {instrument_key} not found in quote response")
+                    await self.send(text_data=json.dumps({'error': f'Instrument {instrument_key} not found in quote'}))
+                    return
+                    
+            except Exception as e:
+                print(f"❌ Error fetching quote: {str(e)}")
+                await self.send(text_data=json.dumps({'error': f'Quote fetch error: {str(e)}'}))
+                return
+
+
             # Calculate new quantity based on P&L
             investable_amount = float(self.investable_amount)
             if PnL > 0:
@@ -883,23 +891,11 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 new_tokens = [self.reverse_token, self.nifty_token]
                 await self.update_subscription(new_tokens)
                 
-                # Determine exchange for reverse trade
-                nse_indices = ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"]
-                bse_indices = ["SENSEX", "BANKEX", "SX50"]
-                
-                if self.index_name in nse_indices:
-                    exchange = self.kite.EXCHANGE_NFO
-                elif self.index_name in bse_indices:
-                    exchange = self.kite.EXCHANGE_BFO
-                else:
-                    exchange = self.kite.EXCHANGE_NFO  # Default to NFO
-                
                 order_id = await self.place_zerodha_order(
                     transaction_type=self.kite.TRANSACTION_TYPE_BUY,
                     trading_symbol=self.reverse_trading_symbol,
                     quantity=quantity,
                     order_type=self.kite.ORDER_TYPE_MARKET,
-                    exchange=exchange,    
                     product=self.kite.PRODUCT_NRML,
                     validity=self.kite.VALIDITY_DAY
                 )
