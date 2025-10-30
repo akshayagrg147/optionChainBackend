@@ -1,5 +1,5 @@
 from django.urls import re_path
-from . import consumers,consumer2 , consumer3 , zerodhaconsumer , zerodha2 , optionchain
+from . import consumers,consumer2 , consumer3 , zerodhaconsumer , zerodha2 , optionchain , zerodhaconsumer2
 
 websocket_urlpatterns = [
     re_path(r'ws/option-data/$', consumers.LiveOptionDataConsumer.as_asgi()),
@@ -8,5 +8,6 @@ websocket_urlpatterns = [
     re_path(r'ws/zerodha/$', zerodhaconsumer.LiveOptionDataConsumerZerodha.as_asgi()),
     re_path(r'ws/zerodhas/$', zerodha2.MarketDataConsumer.as_asgi()),
     re_path(r'ws/optiondata/$', optionchain.LiveOptionData.as_asgi()),
+    re_path(r'ws/manual_zerodha/$', zerodhaconsumer2.LiveOptionDataConsumerZerodha.as_asgi()),
 
 ]

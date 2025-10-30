@@ -27,23 +27,9 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
         self.reset_trade_flags()
         
     def reset_trade_flags(self):
-        self.sell_order_placed = False
-        self.locked_ltp = None
-        self.previous_ltp = None
-        self.order_placedCE = False
-        self.order_placedPE = False
-        self.ltp_at_order = None
-        self.reverse_trade = None
-        self.toggle = True
-        self.buy_token = None
-        self.latest_spot_price = None
         self.keep_running = True
-        self.nifty_token = None
-        self.ce_token = None
-        self.pe_token = None
-        self.ce_reverse_token = None
-        self.pe_reverse_token = None
-        self.index_name = "NIFTY"  # Default index
+        self.trading_symbol = None
+        self.instrument_token = None
         self.instruments_cache = None
         
     def fetch_zerodha_user_name(self, api_key, access_token):
@@ -67,57 +53,28 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 return []
         return self.instruments_cache
     
-    def get_instrument_tokens_by_trading_symbol(self, trading_symbol_input, index_name="NIFTY"):
+    def get_instrument_token_by_trading_symbol(self, trading_symbol_input):
+        """Get instrument token for a single trading symbol"""
         print("🔍 Raw input symbol:", trading_symbol_input)
         
         if not self.kite:
             print("❌ KiteConnect not initialized")
-            return {"CE": None, "PE": None}
+            return None
         
         instruments = self.get_instruments()
         if not instruments:
-            return {"CE": None, "PE": None}
+            return None
         
         clean_symbol = trading_symbol_input.replace(" ", "").upper()
-        result = {"CE": None, "PE": None}
         
         for instrument in instruments:
             if instrument['tradingsymbol'].replace(" ", "").upper() == clean_symbol:
-                if instrument['instrument_type'] == 'CE':
-                    result["CE"] = instrument['instrument_token']
-                    print(f"✅ CE Exact match found: {instrument['tradingsymbol']}, Token: {result['CE']}")
-                elif instrument['instrument_type'] == 'PE':
-                    result["PE"] = instrument['instrument_token']
-                    print(f"✅ PE Exact match found: {instrument['tradingsymbol']}, Token: {result['PE']}")
-                break
+                token = instrument['instrument_token']
+                print(f"✅ Exact match found: {instrument['tradingsymbol']}, Token: {token}")
+                return token
         
-        if result["CE"] or result["PE"]:
-            found_instrument = None
-            for instrument in instruments:
-                if instrument['instrument_token'] == (result["CE"] or result["PE"]):
-                    found_instrument = instrument
-                    break
-            
-            if found_instrument:
-                opposite_type = "PE" if found_instrument['instrument_type'] == "CE" else "CE"
-                for instrument in instruments:
-                    if (instrument['strike'] == found_instrument['strike'] and
-                        instrument['expiry'] == found_instrument['expiry'] and
-                        instrument['instrument_type'] == opposite_type and
-                        instrument['name'] == found_instrument['name']):
-                        
-                        if opposite_type == 'CE':
-                            result["CE"] = instrument['instrument_token']
-                            print(f"✅ CE Opposite match found: {instrument['tradingsymbol']}, Token: {result['CE']}")
-                        else:
-                            result["PE"] = instrument['instrument_token']
-                            print(f"✅ PE Opposite match found: {instrument['tradingsymbol']}, Token: {result['PE']}")
-                        break
-
-
-            
-        
-        return result
+        print(f"❌ No instrument found for symbol: {trading_symbol_input}")
+        return None
 
     async def connect(self):
         await self.accept()
@@ -145,43 +102,11 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             api_key = payload.get('api_key')
             access_token = payload.get('access_token')
             trading_symbol = payload.get('trading_symbol')
-            trading_symbol_2 = payload.get('trading_symbol_2')
-            self.index_name = payload.get('index_name', 'NIFTY')
-            target_market_priceCE = payload.get('target_market_price_CE')
-            target_market_pricePE = payload.get('target_market_price_PE')
-            quantityCE = payload.get('quantityCE')
-            quantityPE = payload.get('quantityPE')
-            step = payload.get('step')
-            expected_profit_percent = payload.get('profit_percent')
-            total_amount = payload.get("total_amount")
-            investable_amount = payload.get("investable_amount") 
-            lot = payload.get("lot")
-            reverse_Trade = payload.get("reverseTrade")
-            self.step = step
-            self.expected_profit_percent = expected_profit_percent
-            self.target_market_priceCE = float(target_market_priceCE) if target_market_priceCE else None
-            self.target_market_pricePE = float(target_market_pricePE) if target_market_pricePE else None
-            self.quantityCE = quantityCE
-            self.quantityPE = quantityPE
-            self.total_amount = total_amount
-            self.investable_amount = investable_amount
-            self.lot = lot
-            self.reverse_Trade = reverse_Trade
+
             if not api_key or not access_token or not trading_symbol:
                 await self.send(text_data=json.dumps({'error': 'Missing required fields: api_key, access_token, trading_symbol'}))
                 return
-                
-            if not target_market_priceCE or not target_market_pricePE or not step or not quantityCE or not quantityPE:
-                await self.send(text_data=json.dumps({'error': 'Missing trading parameters'}))
-                return
-            
 
-
-            
-            if not api_key or not access_token or not trading_symbol:
-                await self.send(text_data=json.dumps({'error': 'Missing required fields: api_key, access_token, trading_symbol'}))
-                return
-                
             try:
                 self.kite = KiteConnect(api_key=api_key)
                 self.kite.set_access_token(access_token)
@@ -197,64 +122,31 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 await self.send(text_data=json.dumps({'error': f'Authentication failed: {str(e)}'}))
                 return
 
-            asyncio.create_task(self.fetch_and_stream_data(trading_symbol, trading_symbol_2))
+            # Store the trading symbol
+            self.trading_symbol = trading_symbol
+            
+            # Start streaming data
+            asyncio.create_task(self.fetch_and_stream_data(trading_symbol))
             
         except Exception as e:
             await self.send(text_data=json.dumps({'error': f'Error processing message: {str(e)}'}))
 
-    async def fetch_and_stream_data(self, trading_symbol, trading_symbol_2):
+    async def fetch_and_stream_data(self, trading_symbol):
         try:
-            nse_instruments = self.kite.instruments("NSE")
-            self.nifty_token = None
+            # Get instrument token for the provided trading symbol
+            self.instrument_token = self.get_instrument_token_by_trading_symbol(trading_symbol)
             
-            index_map = {
-                "NIFTY": "NIFTY 50",
-                "BANKNIFTY": "NIFTY BANK",
-                "FINNIFTY": "NIFTY FIN SERVICE",
-                "MIDCPNIFTY": "NIFTY MID SELECT"
-            }
-            
-            index_tradingsymbol = index_map.get(self.index_name, "NIFTY 50")
-            
-            for inst in nse_instruments:
-                if inst['tradingsymbol'] == index_tradingsymbol:
-                    self.nifty_token = inst['instrument_token']
-                    break
-
-            if not self.nifty_token:
-                await self.send(text_data=json.dumps({'error': f'{self.index_name} token not found'}))
-                return
-            print(f"✅ {self.index_name} token found: {self.nifty_token}")
-
-            ce_tokens = self.get_instrument_tokens_by_trading_symbol(trading_symbol, self.index_name)
-            
-            if trading_symbol_2:
-                pe_tokens = self.get_instrument_tokens_by_trading_symbol(trading_symbol_2, self.index_name)
-            else:
-                pe_tokens = {"CE": None, "PE": None}
-                if ce_tokens["CE"]:
-                    pe_tokens["PE"] = ce_tokens["PE"]
-                elif ce_tokens["PE"]:
-                    pe_tokens["CE"] = ce_tokens["CE"]
-            
-            self.ce_token = ce_tokens.get("CE")
-            self.ce_reverse_token = ce_tokens.get("PE")
-            self.pe_token = pe_tokens.get("PE")
-            self.pe_reverse_token = pe_tokens.get("CE")
-
-            print("🎯 CE Token:", self.ce_token)
-            print("🎯 CE REVERSE Token:", self.ce_reverse_token)
-            print("🎯 PE Token:", self.pe_token)
-            print("🎯 PE REVERSE Token:", self.pe_reverse_token)
-
-            tokens = [self.ce_token, self.pe_token, self.ce_reverse_token, self.pe_reverse_token, self.nifty_token]
-            tokens = [token for token in tokens if token is not None]
-
-            if not tokens:
-                await self.send(text_data=json.dumps({'error': 'No valid tokens found'}))
+            if not self.instrument_token:
+                await self.send(text_data=json.dumps({'error': f'Instrument token not found for symbol: {trading_symbol}'}))
                 return
 
-            print(f"📡 Subscribing to tokens: {tokens}")
+            print(f"🎯 Trading Symbol: {trading_symbol}")
+            print(f"🎯 Instrument Token: {self.instrument_token}")
+
+            # Prepare tokens list - only the instrument token
+            tokens = [self.instrument_token]
+
+            print(f"📡 Subscribing to token: {tokens}")
 
             _websocket_client.enableTrace(True)
 
@@ -289,7 +181,11 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                     ws.subscribe(tokens)
                     ws.set_mode(ws.MODE_FULL, tokens)
                     print(f"✅ Subscribed to {len(tokens)} instruments")
-                    safe_send_json({'info': 'Subscribed to tokens', 'tokens': tokens})
+                    safe_send_json({
+                        'info': 'Subscribed to token', 
+                        'token': self.instrument_token, 
+                        'trading_symbol': trading_symbol
+                    })
                 except Exception:
                     print("❌ Subscribe failure:", traceback.format_exc())
                     safe_send_json({'error': 'Subscribe failed'})
@@ -343,53 +239,26 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             await self.send(text_data=json.dumps({'error': error_msg}))
 
     async def process_ticks(self, ticks):
-        current_ts = int(time.time() * 1000)
         timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
         
         for tick in ticks:
             instrument_token = tick['instrument_token']
-            ltp = tick.get('last_price', 0)
-            volume = tick.get('volume', 0)
-            oi = tick.get('oi', 0)
-            change = tick.get('change', 0)
             
-            if instrument_token == self.nifty_token:
-                self.latest_spot_price = ltp
+            # Only process our target instrument
+            if instrument_token == self.instrument_token:
+                ltp = tick.get('last_price', 0)
+                volume = tick.get('volume', 0)
+                oi = tick.get('oi', 0)
+                change = tick.get('change', 0)
+                
                 result = {
-                    'type': 'SPOT',
+                    'type': 'LTP_DATA',
                     'instrument_token': instrument_token,
+                    'trading_symbol': self.trading_symbol,
                     'ltp': ltp,
                     'volume': volume,
+                    'oi': oi,
                     'timestamp': timestamp,
-                    'spot_price': ltp,
-                    'index_name': self.index_name,
                     'change': change
                 }
                 await self.send(text_data=json.dumps(result))
-                continue
-            
-            instrument_type = "UNKNOWN"
-            if instrument_token == self.ce_token:
-                instrument_type = "CE"
-            elif instrument_token == self.pe_token:
-                instrument_type = "PE"
-            elif instrument_token == self.ce_reverse_token:
-                instrument_type = "CE_REVERSE"
-            elif instrument_token == self.pe_reverse_token:
-                instrument_type = "PE_REVERSE"
-                
-            result = {
-                'type': instrument_type,
-                'instrument_token': instrument_token,
-                'ltp': ltp,
-                'volume': volume,
-                'oi': oi,
-                'spot_price': self.latest_spot_price,
-                'timestamp': timestamp,
-                'index_name': self.index_name,
-                'change': change
-            }
-            await self.send(text_data=json.dumps(result))
-
-
-            

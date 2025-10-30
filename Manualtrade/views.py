@@ -10,9 +10,11 @@ from rest_framework import status
 import json
 import requests
 from .logger import write_log_to_txt
+from .logger import write_log_to_txt2
 from datetime import datetime
 from .utils import fetch_order_status
 from .logger import LOG_FILE_PATH
+from .logger2 import LOG_FILE_PATH2
 import re
 from collections import defaultdict
 from django.http import FileResponse
@@ -645,7 +647,7 @@ from rest_framework.response import Response
 from rest_framework.renderers import JSONRenderer
 from django.conf import settings
 
-# Path to your log file
+
 
 class DownloadUpstoxCSVAPIView(APIView):
     """
@@ -736,3 +738,392 @@ class DownloadUpstoxCSVAPIView(APIView):
 
         except Exception as e:
             return Response({"error": f"Failed to generate CSV: {str(e)}"}, status=500)
+        
+
+
+from kiteconnect import KiteConnect
+
+buy_order_successful = False
+buy_order_price = 0.0
+
+
+
+# Helper: Fetch Zerodha user profile name
+def fetch_zerodha_user_name(access_token, api_key):
+    try:
+        kite = KiteConnect(api_key=api_key)
+        kite.set_access_token(access_token)
+        profile = kite.profile()
+        return profile.get("user_name", "Unknown User")
+    except Exception as e:
+        write_log_to_txt2(f"❌ Error fetching Zerodha user: {str(e)}")
+        return "Unknown User"
+
+
+
+import logging
+
+# Global variables as specified
+buy_zerodha_order_successful = False
+buy_zerodha_order_price = 0.0
+
+
+def fetch_zerodha_user_name(access_token, api_key):
+    """Fetch user name from Zerodha API"""
+    try:
+        kite = KiteConnect(api_key=api_key)
+        kite.set_access_token(access_token)
+        profile = kite.profile()
+        return profile.get('user_name', 'Unknown')
+    except Exception as e:
+        write_log_to_txt2(f"Error fetching user name: {str(e)}")
+        return 'Unknown'
+
+class PlaceZerodhaBuyOrderAPIView(APIView):
+    def post(self, request):
+        global buy_zerodha_order_successful, buy_zerodha_order_price
+
+        api_key = request.data.get("api_key")
+        access_token = request.data.get("access_token")
+        quantity = request.data.get("quantity")
+        tradingsymbol = request.data.get("tradingsymbol")
+        exchange = request.data.get("exchange", "NSE")
+        total_amount = request.data.get("total_amount")
+        investable_amount = request.data.get("investable_amount")
+
+        # Validation
+        if not all([api_key, access_token, tradingsymbol, quantity]):
+            return Response({
+                "success": False,
+                "message": "Fields 'api_key', 'access_token', 'tradingsymbol', and 'quantity' are required."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user_name = fetch_zerodha_user_name(access_token, api_key)
+            
+            # Initialize KiteConnect
+            kite = KiteConnect(api_key=api_key)
+            kite.set_access_token(access_token)
+
+            # Place market buy order
+            order_id = kite.place_order(
+                variety=kite.VARIETY_REGULAR,
+                exchange=exchange,
+                tradingsymbol=tradingsymbol,
+                transaction_type=kite.TRANSACTION_TYPE_BUY,
+                quantity=int(quantity),
+                order_type=kite.ORDER_TYPE_MARKET,
+                product=kite.PRODUCT_NRML
+            )
+
+            write_log_to_txt2(f"📤 Buy Order Placed (Pending) | User: {user_name} | Symbol: {tradingsymbol} | Qty: {quantity} | Time: {datetime.now()}")
+
+            # Check order status
+            order_details = kite.order_history(order_id)
+            final_status = order_details[-1].get("status")
+            average_price = order_details[-1].get("average_price", 0.0)
+
+            if final_status and final_status.lower() == "complete":
+                # Update global variables
+                buy_zerodha_order_successful = True
+                buy_zerodha_order_price = float(average_price)
+
+                write_log_to_txt2(
+                    f"✅ BUY ORDER COMPLETE | User: {user_name} | Symbol: {tradingsymbol} | Qty: {quantity} | "
+                    f"Price: ₹{average_price} | Total: {total_amount} | Investable: {investable_amount} | Time: {datetime.now()}"
+                )
+
+                write_log_to_txt2(f"📊 Global variables updated - buy_zerodha_order_successful: {buy_zerodha_order_successful}, buy_zerodha_order_price: {buy_zerodha_order_price}")
+
+                return Response({
+                    "success": True,
+                    "message": f"Buy order placed successfully at ₹{average_price}",
+                    "order_id": order_id,
+                    "price": average_price,
+                    "global_status": {
+                        "buy_order_successful": buy_zerodha_order_successful,
+                        "buy_order_price": buy_zerodha_order_price
+                    }
+                }, status=status.HTTP_200_OK)
+
+            else:
+                # Reset global variables on failure
+                buy_zerodha_order_successful = False
+                buy_zerodha_order_price = 0.0
+                
+                write_log_to_txt2(f"❌ BUY ORDER FAILED | User: {user_name} | Symbol: {tradingsymbol} | Status: {final_status}")
+                write_log_to_txt2(f"📊 Global variables reset - buy_zerodha_order_successful: {buy_zerodha_order_successful}, buy_zerodha_order_price: {buy_zerodha_order_price}")
+                
+                return Response({
+                    "success": False,
+                    "message": f"Buy order not completed, status: {final_status}",
+                    "order_id": order_id,
+                    "global_status": {
+                        "buy_order_successful": buy_zerodha_order_successful,
+                        "buy_order_price": buy_zerodha_order_price
+                    }
+                }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            # Reset global variables on exception
+            buy_zerodha_order_successful = False
+            buy_zerodha_order_price = 0.0
+            
+            write_log_to_txt2(f"❌ Exception placing Zerodha buy order: {str(e)}")
+            write_log_to_txt2(f"📊 Global variables reset due to exception - buy_zerodha_order_successful: {buy_zerodha_order_successful}, buy_zerodha_order_price: {buy_zerodha_order_price}")
+            
+            return Response({
+                "success": False, 
+                "error": str(e),
+                "global_status": {
+                    "buy_order_successful": buy_zerodha_order_successful,
+                    "buy_order_price": buy_zerodha_order_price
+                }
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class PlaceZerodhaSellOrderAPIView(APIView):
+    def post(self, request):
+        global buy_zerodha_order_successful, buy_zerodha_order_price
+
+        api_key = request.data.get("api_key")
+        access_token = request.data.get("access_token")
+        quantity = request.data.get("quantity")
+        tradingsymbol = request.data.get("tradingsymbol")
+        exchange = request.data.get("exchange", "NFO")
+        total_amount = request.data.get("total_amount")
+        investable_amount = request.data.get("investable_amount")
+
+        # Validation
+        if not all([api_key, access_token, tradingsymbol, quantity]):
+            return Response({
+                "success": False,
+                "message": "Fields 'api_key', 'access_token', 'tradingsymbol', and 'quantity' are required."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check if we have a successful buy order
+        if not buy_zerodha_order_successful:
+            write_log_to_txt2(f"❌ SELL ORDER REJECTED - No successful buy order found | Global status: buy_zerodha_order_successful={buy_zerodha_order_successful}, buy_zerodha_order_price={buy_zerodha_order_price}")
+            return Response({
+                "success": False,
+                "message": "No successful buy order found. Please place a buy order first.",
+                "global_status": {
+                    "buy_order_successful": buy_zerodha_order_successful,
+                    "buy_order_price": buy_zerodha_order_price
+                }
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user_name = fetch_zerodha_user_name(access_token, api_key)
+            
+            # Initialize KiteConnect
+            kite = KiteConnect(api_key=api_key)
+            kite.set_access_token(access_token)
+
+            # Place market sell order
+            order_id = kite.place_order(
+                variety=kite.VARIETY_REGULAR,
+                exchange=exchange,
+                tradingsymbol=tradingsymbol,
+                transaction_type=kite.TRANSACTION_TYPE_SELL,
+                quantity=int(quantity),
+                order_type=kite.ORDER_TYPE_MARKET,
+                product=kite.PRODUCT_NRML
+            )
+
+            write_log_to_txt2(f"📤 Sell Order Placed (Pending) | User: {user_name} | Symbol: {tradingsymbol} | Qty: {quantity} | Buy Price: ₹{buy_zerodha_order_price} | Time: {datetime.now()}")
+
+            # Check order status
+            order_details = kite.order_history(order_id)
+            final_status = order_details[-1].get("status")
+            average_price = order_details[-1].get("average_price", 0.0)
+
+            if final_status and final_status.lower() == "complete":
+                sell_price = float(average_price)
+                
+                # Calculate PnL
+                pnl_percent = 0.0
+                if buy_zerodha_order_price > 0:
+                    pnl_percent = round(((sell_price - buy_zerodha_order_price) / buy_zerodha_order_price) * 100, 2)
+
+                # Store previous buy price for logging before resetting
+                previous_buy_price = buy_zerodha_order_price
+                
+                # Reset global variables after successful sell
+                buy_zerodha_order_successful = False
+                buy_zerodha_order_price = 0.0
+
+                write_log_to_txt2(
+                    f"✅ SELL ORDER COMPLETE | User: {user_name} | Symbol: {tradingsymbol} | Qty: {quantity} | "
+                    f"Sell Price: ₹{sell_price} | Buy Price: ₹{previous_buy_price} | PnL: {pnl_percent}% | Time: {datetime.now()}"
+                )
+                write_log_to_txt2(f"📊 Global variables reset after sell - buy_zerodha_order_successful: {buy_zerodha_order_successful}, buy_zerodha_order_price: {buy_zerodha_order_price}")
+
+                return Response({
+                    "success": True,
+                    "message": f"Sell order placed successfully at ₹{sell_price}",
+                    "order_id": order_id,
+                    "price": sell_price,
+                    "pnl_percent": pnl_percent,
+                    "buy_price": previous_buy_price,
+                    "global_status": {
+                        "buy_order_successful": buy_zerodha_order_successful,
+                        "buy_order_price": buy_zerodha_order_price
+                    }
+                }, status=status.HTTP_200_OK)
+
+            else:
+                write_log_to_txt2(f"❌ SELL ORDER FAILED | User: {user_name} | Symbol: {tradingsymbol} | Status: {final_status}")
+                return Response({
+                    "success": False,
+                    "message": f"Sell order not completed, status: {final_status}",
+                    "order_id": order_id,
+                    "global_status": {
+                        "buy_order_successful": buy_zerodha_order_successful,
+                        "buy_order_price": buy_zerodha_order_price
+                    }
+                }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            write_log_to_txt2(f"❌ Exception placing Zerodha sell order: {str(e)}")
+            return Response({
+                "success": False, 
+                "error": str(e),
+                "global_status": {
+                    "buy_order_successful": buy_zerodha_order_successful,
+                    "buy_order_price": buy_zerodha_order_price
+                }
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class CheckZerodhaOrderStatusAPIView(APIView):
+    """API to check current global order status"""
+    def get(self, request):
+        global buy_zerodha_order_successful, buy_zerodha_order_price
+        
+        return Response({
+            "success": True,
+            "global_status": {
+                "buy_order_successful": buy_zerodha_order_successful,
+                "buy_order_price": buy_zerodha_order_price
+            },
+            "message": f"Current status - Buy Order Successful: {buy_zerodha_order_successful}, Buy Price: {buy_zerodha_order_price}"
+        }, status=status.HTTP_200_OK)
+
+
+class ResetZerodhaOrderStatusAPIView(APIView):
+    """API to reset global order status"""
+    def post(self, request):
+        global buy_zerodha_order_successful, buy_zerodha_order_price
+        
+        # Reset global variables
+        buy_zerodha_order_successful = False
+        buy_zerodha_order_price = 0.0
+        
+        write_log_to_txt2(f"🔄 Global variables manually reset - buy_zerodha_order_successful: {buy_zerodha_order_successful}, buy_zerodha_order_price: {buy_zerodha_order_price}")
+        
+        return Response({
+            "success": True,
+            "message": "Global order status reset successfully",
+            "global_status": {
+                "buy_order_successful": buy_zerodha_order_successful,
+                "buy_order_price": buy_zerodha_order_price
+            }
+        }, status=status.HTTP_200_OK)
+
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from kiteconnect import KiteConnect
+import os
+from django.conf import settings
+
+class GetTradingSymbolsAndTokenZerodha(APIView):
+    """
+    Fetch instrument_token and tradingsymbol for given option parameters (name, expiry, strike, option_type)
+    directly from Zerodha instruments — not from CSV.
+    """
+
+    def post(self, request):
+        api_key = request.data.get("api_key")
+        access_token = request.data.get("access_token")
+        option_requests = request.data.get("options")
+
+        # ✅ Validate
+        if not api_key or not access_token:
+            return Response({"error": "api_key and access_token are required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not isinstance(option_requests, list) or len(option_requests) == 0:
+            return Response({"error": "Payload must contain a non-empty 'options' list"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # ✅ Initialize KiteConnect
+            kite = KiteConnect(api_key=api_key)
+            kite.set_access_token(access_token)
+
+            # ✅ Fetch NSE instruments (you can also fetch others like NFO if needed)
+            instruments = kite.instruments("NFO")
+
+            results = []
+            for option in option_requests:
+                name = option.get("name")
+                expiry = option.get("expiry")
+                option_type = option.get("option_type")
+                strike = option.get("strike")
+
+                if not all([name, expiry, option_type, strike]):
+                    return Response({"error": "Each option must contain name, expiry, option_type, and strike"}, status=status.HTTP_400_BAD_REQUEST)
+
+                # ✅ Search in Zerodha instruments
+                match = next(
+                    (
+                        inst for inst in instruments
+                        if inst["name"].strip().upper() == name.strip().upper()
+                        and str(inst["expiry"]) == expiry.strip()
+                        and inst["instrument_type"].strip().upper() == option_type.strip().upper()
+                        and float(inst["strike"]) == float(strike)
+                    ),
+                    None
+                )
+
+                if match:
+                    results.append({
+                        "name": name,
+                        "expiry": expiry,
+                        "option_type": option_type,
+                        "strike": strike,
+                        "tradingsymbol": match["tradingsymbol"],
+                        "instrument_token": match["instrument_token"]
+                    })
+                else:
+                    results.append({
+                        "name": name,
+                        "expiry": expiry,
+                        "option_type": option_type,
+                        "strike": strike,
+                        "error": "Not found"
+                    })
+
+            return Response({"results": results}, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({"error": f"Unexpected error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
+class DownloadZerodhaLogAPIView(APIView):
+    def get(self, request):
+        if not os.path.exists(LOG_FILE_PATH2):
+            return Response({"error": "Log file not found"}, status=404)
+        
+        try:
+            # Send the file as a downloadable response
+            response = FileResponse(
+                open(LOG_FILE_PATH2, 'rb'),
+                as_attachment=True,
+                filename='upstox_orders.txt'
+            )
+            return response
+        except Exception as e:
+            return Response({"error": f"Failed to download log: {str(e)}"}, status=500)
