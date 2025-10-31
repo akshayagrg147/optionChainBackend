@@ -36,7 +36,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
         self.reverse_trade = None
         self.toggle = True
         self.buy_token = None
-        self.buy_trading_symbol = None  # Store trading symbol instead of token
+        self.buy_trading_symbol = None
         self.buy_quantity = None
         self.buy_in_ltp = None
         self.sell_in_ltp = None
@@ -46,12 +46,12 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
         self.nifty_token = None
         self.ce_token = None
         self.pe_token = None
-        self.ce_trading_symbol = None  # Store trading symbol for CE
-        self.pe_trading_symbol = None  # Store trading symbol for PE
+        self.ce_trading_symbol = None
+        self.pe_trading_symbol = None
         self.ce_reverse_token = None
         self.pe_reverse_token = None
-        self.ce_reverse_trading_symbol = None  # Store trading symbol for reverse CE
-        self.pe_reverse_trading_symbol = None  # Store trading symbol for reverse PE
+        self.ce_reverse_trading_symbol = None
+        self.pe_reverse_trading_symbol = None
         self.index_name = "NIFTY"
         self.instruments_cache = None
         self.account_name = None
@@ -59,9 +59,16 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
         self.expected_profit_percent = None
         self.target_market_priceCE = None
         self.target_market_pricePE = None
-        self.current_subscribed_tokens = []  # Track currently subscribed tokens
-        self.spot_price_only_mode = False   # Flag to track if we only need spot price
-        self.exchange_type = "NSE"  # Default exchange type
+        self.current_subscribed_tokens = []
+        self.spot_price_only_mode = False
+        self.exchange_type = "NSE"
+        
+        # ADD THESE CRITICAL FIXES
+        self.order_lock = asyncio.Lock()  # Prevent multiple order execution
+        self.last_tick_time = 0  # Rate limiting
+        self.tick_interval = 0.2  # Process ticks max every 200ms
+        self.last_buy_check_time = 0  # Separate rate limiting for buy checks
+        self.buy_check_interval = 0.5  # Check buy conditions every 500ms
         
     def log_order_event(self, account_name: str, title: str, data: dict):
         log_block = [f"\n{'='*20} {account_name.upper()} | {title} {'='*20}"]
@@ -83,9 +90,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
     def get_instruments(self):
         if not self.instruments_cache:
             try:
-                # For NSE indices - use NFO
                 nse_indices = ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"]
-                # For BSE indices - use BFO
                 bse_indices = ["SENSEX", "BANKEX", "SX50"]
                 
                 if self.index_name in nse_indices:
@@ -120,7 +125,6 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             "PE": {"token": None, "trading_symbol": None}
         }
         
-        # First find the exact match
         for instrument in instruments:
             if instrument['tradingsymbol'].replace(" ", "").upper() == clean_symbol:
                 if instrument['instrument_type'] == 'CE':
@@ -133,7 +137,6 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                     print(f"✅ PE Exact match found: {instrument['tradingsymbol']}, Token: {result['PE']['token']}")
                 break
         
-        # Find the opposite instrument
         if result["CE"]["token"] or result["PE"]["token"]:
             found_instrument = None
             for instrument in instruments:
@@ -200,7 +203,6 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             lot = payload.get("lot")
             reverse_Trade = payload.get("reverseTrade")
             
-            # Store trading parameters
             self.step = step
             self.expected_profit_percent = expected_profit_percent
             self.target_market_priceCE = float(target_market_priceCE) if target_market_priceCE else None
@@ -225,7 +227,6 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 self.kite.set_access_token(access_token)
                 print("✅ KiteConnect initialized successfully")
                 
-                # Fetch user name for logging
                 self.account_name = self.fetch_zerodha_user_name(api_key, access_token)
                 
             except Exception as e:
@@ -248,10 +249,8 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
         """Update WebSocket subscription to only necessary tokens"""
         if self.kws and self.kws.is_connected():
             try:
-                
                 if self.current_subscribed_tokens:
                     self.kws.unsubscribe(self.current_subscribed_tokens)
-                
                 
                 self.kws.subscribe(new_tokens)
                 self.kws.set_mode(self.kws.MODE_FULL, new_tokens)
@@ -268,7 +267,6 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
     async def place_zerodha_order(self, transaction_type, trading_symbol, quantity, order_type="MARKET", price=0, product=None, validity=None):
         """Place order using Zerodha KiteConnect API with trading symbol"""
         try:
-            # Determine exchange from index type
             nse_indices = ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"]
             bse_indices = ["SENSEX", "BANKEX", "SX50"]
             
@@ -277,10 +275,8 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             elif self.index_name in bse_indices:
                 exchange = self.kite.EXCHANGE_BFO
             else:
-                # Fallback to NFO
                 exchange = self.kite.EXCHANGE_NFO
             
-            # Set default product and validity if not provided
             if product is None:
                 product = self.kite.PRODUCT_NRML
             if validity is None:
@@ -331,7 +327,6 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
 
     async def fetch_and_stream_data(self, trading_symbol, trading_symbol_2):
         try:
-            # Determine exchange and fetch instruments
             nse_indices = ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"]
             bse_indices = ["SENSEX", "BANKEX", "SX50"]
             
@@ -348,12 +343,10 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             self.nifty_token = None
             
             index_map = {
-                # NSE Indices
                 "NIFTY": "NIFTY 50",
                 "BANKNIFTY": "NIFTY BANK",
                 "FINNIFTY": "NIFTY FIN SERVICE",
                 "MIDCPNIFTY": "NIFTY MID SELECT",
-                # BSE Indices
                 "SENSEX": "SENSEX",
                 "BANKEX": "BANKEX",
                 "SX50": "S&P BSE SENSEX 50"
@@ -374,7 +367,6 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 return
             print(f"✅ {self.index_name} token found: {self.nifty_token}")
 
-            # Get instrument details for both trading symbols
             ce_details = self.get_instrument_details_by_trading_symbol(trading_symbol, self.index_name)
             
             if trading_symbol_2:
@@ -388,7 +380,6 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                     pe_details["CE"]["token"] = ce_details["CE"]["token"]
                     pe_details["CE"]["trading_symbol"] = ce_details["CE"]["trading_symbol"]
             
-            # Store token and trading symbol details
             self.ce_token = ce_details["CE"]["token"]
             self.ce_trading_symbol = ce_details["CE"]["trading_symbol"]
             self.ce_reverse_token = ce_details["PE"]["token"]
@@ -404,9 +395,6 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             print("🎯 PE Token:", self.pe_token, "PE Trading Symbol:", self.pe_trading_symbol)
             print("🎯 PE REVERSE Token:", self.pe_reverse_token, "PE Reverse Trading Symbol:", self.pe_reverse_trading_symbol)
 
-        
-
-            # Initially subscribe only to spot and both option tokens for buy conditions
             initial_tokens = [self.ce_token, self.pe_token, self.nifty_token]
             initial_tokens = [token for token in initial_tokens if token is not None]
 
@@ -495,7 +483,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             ws_thread.start()
 
             while self.keep_running:
-                await asyncio.sleep()
+                await asyncio.sleep(0)
 
         except Exception as e:
             error_msg = f'Stream setup failed: {str(e)}'
@@ -504,6 +492,14 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             await self.send(text_data=json.dumps({'error': error_msg}))
 
     async def process_ticks(self, ticks):
+        """Process ticks with rate limiting"""
+        # ADD RATE LIMITING
+        current_time = time.time()
+        if current_time - self.last_tick_time < self.tick_interval:
+            return
+            
+        self.last_tick_time = current_time
+        
         current_ts = int(time.time() * 1000)
         timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
         
@@ -514,11 +510,9 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             oi = tick.get('oi', 0)
             change = tick.get('change', 0)
             
-            # Always process spot price for buy conditions
             if instrument_token == self.nifty_token:
                 self.latest_spot_price = ltp
                 if not self.order_placedCE and not self.order_placedPE:
-                    # Only send spot price if we haven't placed any orders yet
                     result = {
                         'type': 'SPOT',
                         'instrument_token': instrument_token,
@@ -532,17 +526,14 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                     }
                     await self.send(text_data=json.dumps(result))
                 
-                # Check for buy conditions using spot price
+                # Check for buy conditions with rate limiting
                 await self.check_buy_conditions(instrument_token, ltp, timestamp)
                 continue
             
-            # Process option ticks based on current state
             if self.order_placedCE or self.order_placedPE:
-                # After order placed, only process the bought token
                 if instrument_token == self.buy_token:
                     await self.process_bought_token_tick(instrument_token, ltp, timestamp, volume, oi, change)
             else:
-                # Before order placement, process both CE and PE for display
                 instrument_type = "UNKNOWN"
                 if instrument_token == self.ce_token:
                     instrument_type = "CE"
@@ -569,7 +560,6 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
         try:
             current_ltp = float(ltp)
             
-            # Send the tick data to frontend
             result = {
                 'type': 'BOUGHT_OPTION',
                 'instrument_token': instrument_token,
@@ -594,10 +584,14 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
 
     async def process_trailing_sl(self, instrument_token, current_ltp, timestamp):
         """Process trailing stop loss for bought token"""
+        # ADD RATE LIMITING
+        current_time = time.time()
+        if current_time - self.last_tick_time < self.tick_interval:
+            return
+            
         try:
             if not self.sell_order_placed and self.ltp_at_order is not None:
                 
-                # Initialize trailing SL
                 if self.locked_ltp is None:
                     self.step_size = round(float(self.ltp_at_order) * self.step / 100, 2)
                     self.locked_ltp = round(float(self.ltp_at_order) - self.step_size, 2)
@@ -611,7 +605,6 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 
                 print(f"📈 Buy: {self.ltp_at_order} | Locked SL: {self.locked_ltp} | Live LTP: {current_ltp}")
                 
-                # Update trailing SL
                 if current_ltp > self.previous_ltp:
                     while current_ltp >= self.locked_ltp + self.step_size:
                         self.locked_ltp = round(self.locked_ltp + self.step_size, 2)
@@ -622,7 +615,6 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 pnl_percent = round(((current_ltp - float(self.ltp_at_order)) / float(self.ltp_at_order)) * 100, 2)
                 print(f"📈 Buy: {self.ltp_at_order} | Locked SL: {self.locked_ltp} | Live LTP: {current_ltp} | P&L: {pnl_percent}%")
 
-                # Send P&L update
                 await self.send(text_data=json.dumps({
                     'pnl_update': True,
                     'current_ltp': current_ltp,
@@ -631,12 +623,14 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                     'locked_ltp': self.locked_ltp
                 }))
 
-                # Check sell condition
+                # CRITICAL FIX: Add lock to prevent multiple sell executions
                 if ((current_ltp <= self.locked_ltp and current_ltp < self.previous_ltp) or 
                     (current_ltp < self.locked_ltp)):
                     
                     print(f'🚨 Sell condition triggered for token: {self.buy_token}')
-                    await self.place_sell_order(current_ltp)
+                    async with self.order_lock:
+                        if not self.sell_order_placed:  # Double check inside lock
+                            await self.place_sell_order(current_ltp)
                 
                 self.previous_ltp = current_ltp
                 
@@ -645,29 +639,47 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
 
     async def check_buy_conditions(self, instrument_token, ltp, timestamp):
         """Check conditions for placing buy orders"""
-        try:
-            # CE Buy Condition
-            if (not self.order_placedCE and not self.order_placedPE and 
-                self.latest_spot_price is not None and 
-                self.target_market_priceCE <= float(self.latest_spot_price)):
-                
-                print(f"✅ CE Buy Condition Met: {self.latest_spot_price}, Target: {self.target_market_priceCE}")
-                await self.place_buy_order(self.ce_token, self.ce_trading_symbol, self.quantityCE, "CE", timestamp)
-                return
+        # ADD RATE LIMITING FOR BUY CHECKS
+        current_time = time.time()
+        if current_time - self.last_buy_check_time < self.buy_check_interval:
+            return
             
-            # PE Buy Condition  
-            if (not self.order_placedPE and not self.order_placedCE and
-                self.latest_spot_price is not None and
-                self.target_market_pricePE >= float(self.latest_spot_price)):
+        self.last_buy_check_time = current_time
+        
+        # CRITICAL FIX: Add lock to prevent multiple buy executions
+        async with self.order_lock:
+            try:
+                # DOUBLE CHECK inside lock
+                if self.order_placedCE or self.order_placedPE:
+                    return
+                    
+                # CE Buy Condition
+                if (self.latest_spot_price is not None and 
+                    self.target_market_priceCE <= float(self.latest_spot_price)):
+                    
+                    print(f"✅ CE Buy Condition Met: {self.latest_spot_price}, Target: {self.target_market_priceCE}")
+                    # SET FLAGS IMMEDIATELY
+                    self.order_placedCE = True
+                    self.order_placedPE = True
+                    await self.place_buy_order(self.ce_token, self.ce_trading_symbol, self.quantityCE, "CE", timestamp)
+                    return
                 
-                print(f"✅ PE Buy Condition Met: {self.latest_spot_price}, Target: {self.target_market_pricePE}")
-                await self.place_buy_order(self.pe_token, self.pe_trading_symbol, self.quantityPE, "PE", timestamp)
-                
-        except Exception as e:
-            print(f"❌ Error in check_buy_conditions: {str(e)}")
+                # PE Buy Condition  
+                if (self.latest_spot_price is not None and
+                    self.target_market_pricePE >= float(self.latest_spot_price)):
+                    
+                    print(f"✅ PE Buy Condition Met: {self.latest_spot_price}, Target: {self.target_market_pricePE}")
+                    # SET FLAGS IMMEDIATELY
+                    self.order_placedCE = True
+                    self.order_placedPE = True
+                    await self.place_buy_order(self.pe_token, self.pe_trading_symbol, self.quantityPE, "PE", timestamp)
+                    
+            except Exception as e:
+                print(f"❌ Error in check_buy_conditions: {str(e)}")
 
     async def place_buy_order(self, token, trading_symbol, quantity, option_type, timestamp):
         """Place buy order for CE or PE using trading symbol"""
+        # CRITICAL: Lock is already acquired in check_buy_conditions, but double check
         try:
             print(f'🎯 Placing BUY order - Token: {token}, Trading Symbol: {trading_symbol}, Type: {option_type}, Qty: {quantity}')
             
@@ -684,22 +696,19 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             )
             
             if order_id:
-                # Wait a bit for order to be processed
+                # INCREASE DELAY to ensure order is processed
                 await asyncio.sleep(1)
                 
-                # Fetch order details
                 order_details = await self.fetch_order_status(order_id)
                 
                 if order_details and order_details['status'] == 'COMPLETE':
-                    self.order_placedCE = True
-                    self.order_placedPE = True
+                    # Flags already set, just update other values
                     self.buy_token = token
                     self.buy_trading_symbol = trading_symbol
                     self.buy_quantity = quantity
                     self.buy_in_ltp = float(order_details['average_price'])
                     self.ltp_at_order = self.buy_in_ltp
                     
-                    # Set reverse token and trading symbol based on option type
                     if option_type == "CE":
                         self.reverse_token = self.ce_reverse_token
                         self.reverse_trading_symbol = self.ce_reverse_trading_symbol
@@ -707,7 +716,6 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                         self.reverse_token = self.pe_reverse_token
                         self.reverse_trading_symbol = self.pe_reverse_trading_symbol
                     
-                    # Update subscription to only the bought token and spot
                     new_tokens = [self.buy_token, self.nifty_token]
                     await self.update_subscription(new_tokens)
                     
@@ -733,6 +741,9 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                         }
                     )
                 else:
+                    # RESET FLAGS if order failed
+                    self.order_placedCE = False
+                    self.order_placedPE = False
                     error_msg = order_details.get('status_message', 'Unknown error') if order_details else 'Order not completed'
                     self.log_order_event(
                         self.account_name,
@@ -746,85 +757,99 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                     }))
                     
         except Exception as e:
+            # RESET FLAGS on exception
+            self.order_placedCE = False
+            self.order_placedPE = False
             print(f"❌ Error placing buy order: {str(e)}")
             await self.send(text_data=json.dumps({'error': f'Order exception: {str(e)}'}))
 
     async def place_sell_order(self, current_ltp):
         """Place sell order and handle reverse trade if needed"""
-        try:
-            print(f'🎯 Placing SELL order - Token: {self.buy_token}, Trading Symbol: {self.buy_trading_symbol}, Qty: {self.buy_quantity}')
-            
-            if not self.buy_trading_symbol:
-                raise ValueError("Buy trading symbol not found")
-            
-            order_id = await self.place_zerodha_order(
-                transaction_type=self.kite.TRANSACTION_TYPE_SELL,
-                trading_symbol=self.buy_trading_symbol,
-                quantity=self.buy_quantity,
-                order_type=self.kite.ORDER_TYPE_MARKET,
-                product=self.kite.PRODUCT_NRML,
-                validity=self.kite.VALIDITY_DAY
-            )
-            
-            if order_id:
-                # Wait for order processing
-                await asyncio.sleep(1)
+        # CRITICAL FIX: Add lock to prevent multiple sell executions
+        async with self.order_lock:
+            try:
+                # DOUBLE CHECK inside lock
+                if self.sell_order_placed:
+                    print("🔄 Sell order already placed, skipping...")
+                    return
+                    
+                print(f'🎯 Placing SELL order - Token: {self.buy_token}, Trading Symbol: {self.buy_trading_symbol}, Qty: {self.buy_quantity}')
                 
-                order_details = await self.fetch_order_status(order_id)
+                if not self.buy_trading_symbol:
+                    raise ValueError("Buy trading symbol not found")
                 
-                if order_details and order_details['status'] == 'COMPLETE':
-                    self.sell_in_ltp = float(order_details['average_price'])
-                    PnL = round(((self.sell_in_ltp - self.buy_in_ltp) / self.buy_in_ltp) * 100, 2)
-                    self.sell_order_placed = True
+                # SET FLAG IMMEDIATELY
+                self.sell_order_placed = True
+                
+                order_id = await self.place_zerodha_order(
+                    transaction_type=self.kite.TRANSACTION_TYPE_SELL,
+                    trading_symbol=self.buy_trading_symbol,
+                    quantity=self.buy_quantity,
+                    order_type=self.kite.ORDER_TYPE_MARKET,
+                    product=self.kite.PRODUCT_NRML,
+                    validity=self.kite.VALIDITY_DAY
+                )
+                
+                if order_id:
+                    # INCREASE DELAY
+                    await asyncio.sleep(1)
                     
-                    self.log_order_event(
-                        self.account_name,
-                        "✅ SELL Order Placed",
-                        {
-                            'Token_Purchase': self.buy_token,
-                            'Trading_Symbol': self.buy_trading_symbol,
-                            'Market Value': self.latest_spot_price,
-                            'SELL LTP': self.sell_in_ltp,
-                            'Quantity': self.buy_quantity,
-                            "Total Amount": self.total_amount,
-                            "Investable Amount": self.investable_amount,
-                            "P & L percent": PnL,
-                            "Time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                        }
-                    )
+                    order_details = await self.fetch_order_status(order_id)
                     
-                    await self.send(text_data=json.dumps({
-                        'message': 'SELL Order placed successfully',
-                        'SELL_LTP': self.sell_in_ltp,
-                        "pnl_percentage": PnL,
-                    }))
-                    
-                    # Handle reverse trade if enabled
-                    if self.reverse_Trade == "ON" and PnL < self.expected_profit_percent:
-                        await self.execute_reverse_trade(PnL)
-                    else:
-                        # Reset flags if no reverse trade
-                        self.reset_trade_flags()
+                    if order_details and order_details['status'] == 'COMPLETE':
+                        self.sell_in_ltp = float(order_details['average_price'])
+                        PnL = round(((self.sell_in_ltp - self.buy_in_ltp) / self.buy_in_ltp) * 100, 2)
+                        
+                        self.log_order_event(
+                            self.account_name,
+                            "✅ SELL Order Placed",
+                            {
+                                'Token_Purchase': self.buy_token,
+                                'Trading_Symbol': self.buy_trading_symbol,
+                                'Market Value': self.latest_spot_price,
+                                'SELL LTP': self.sell_in_ltp,
+                                'Quantity': self.buy_quantity,
+                                "Total Amount": self.total_amount,
+                                "Investable Amount": self.investable_amount,
+                                "P & L percent": PnL,
+                                "Time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                            }
+                        )
+                        
                         await self.send(text_data=json.dumps({
-                            'message': 'Trading completed - No reverse trade'
+                            'message': 'SELL Order placed successfully',
+                            'SELL_LTP': self.sell_in_ltp,
+                            "pnl_percentage": PnL,
                         }))
                         
-                else:
-                    error_msg = order_details.get('status_message', 'Unknown error') if order_details else 'Order not completed'
-                    self.log_order_event(
-                        self.account_name,
-                        "❌ SELL ORDER FAILED",
-                        {
-                            "Error": error_msg
-                        }
-                    )
-                    await self.send(text_data=json.dumps({
-                        'message': 'SELL Order Failed'
-                    }))
-                    
-        except Exception as e:
-            print(f"❌ Error placing sell order: {str(e)}")
-            await self.send(text_data=json.dumps({'error': f'Sell order error: {str(e)}'}))
+                        if self.reverse_Trade == "ON" and PnL < self.expected_profit_percent:
+                            await self.execute_reverse_trade(PnL)
+                        else:
+                            self.reset_trade_flags()
+                            await self.send(text_data=json.dumps({
+                                'message': 'Trading completed - No reverse trade'
+                            }))
+                            
+                    else:
+                        # RESET sell flag if order failed
+                        self.sell_order_placed = False
+                        error_msg = order_details.get('status_message', 'Unknown error') if order_details else 'Order not completed'
+                        self.log_order_event(
+                            self.account_name,
+                            "❌ SELL ORDER FAILED",
+                            {
+                                "Error": error_msg
+                            }
+                        )
+                        await self.send(text_data=json.dumps({
+                            'message': 'SELL Order Failed'
+                        }))
+                        
+            except Exception as e:
+                # RESET sell flag on exception
+                self.sell_order_placed = False
+                print(f"❌ Error placing sell order: {str(e)}")
+                await self.send(text_data=json.dumps({'error': f'Sell order error: {str(e)}'}))
 
     async def execute_reverse_trade(self, PnL):
         """Execute reverse trade after sell"""
@@ -870,8 +895,6 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 await self.send(text_data=json.dumps({'error': f'Quote fetch error: {str(e)}'}))
                 return
 
-
-            # Calculate new quantity based on P&L
             investable_amount = float(self.investable_amount)
             if PnL > 0:
                 new_investable = investable_amount + (PnL / 100) * investable_amount
@@ -888,7 +911,6 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             if quantity > 0:
                 print(f"🎯 Executing reverse trade with token: {self.reverse_token}, Trading Symbol: {self.reverse_trading_symbol}")
                 
-                # Update subscription to the reverse token
                 new_tokens = [self.reverse_token, self.nifty_token]
                 await self.update_subscription(new_tokens)
                 
@@ -902,7 +924,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 )
                 
                 if order_id:
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(1)  # Increased delay
                     order_details = await self.fetch_order_status(order_id)
                     
                     if order_details and order_details['status'] == 'COMPLETE':
