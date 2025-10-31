@@ -50,6 +50,7 @@ class FundInstrument(models.Model):
     sandbox_token = models.CharField(max_length=500, unique=True, null=True, blank=True)
     api_key = models.CharField(max_length=500, unique=True, null=True, blank=True)
     zerodha_token = models.CharField(max_length=500, unique=True, null=True, blank=True)
+    type = models.CharField(max_length=50, null=True, blank=True)
 
     def __str__(self):
         return f"{self.name} - {self.funds}"

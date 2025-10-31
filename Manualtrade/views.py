@@ -10,7 +10,7 @@ from rest_framework import status
 import json
 import requests
 from .logger import write_log_to_txt
-from .logger import write_log_to_txt2
+from .logger2 import write_log_to_txt2
 from datetime import datetime
 from .utils import fetch_order_status
 from .logger import LOG_FILE_PATH
