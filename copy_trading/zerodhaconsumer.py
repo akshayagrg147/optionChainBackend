@@ -495,7 +495,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             ws_thread.start()
 
             while self.keep_running:
-                await asyncio.sleep(0)
+                await asyncio.sleep()
 
         except Exception as e:
             error_msg = f'Stream setup failed: {str(e)}'
@@ -626,6 +626,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 await self.send(text_data=json.dumps({
                     'pnl_update': True,
                     'current_ltp': current_ltp,
+                    'spot': self.latest_spot_price,
                     'pnl_percent': pnl_percent,
                     'locked_ltp': self.locked_ltp
                 }))
@@ -684,7 +685,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             
             if order_id:
                 # Wait a bit for order to be processed
-                await asyncio.sleep(0)
+                await asyncio.sleep(1)
                 
                 # Fetch order details
                 order_details = await self.fetch_order_status(order_id)
@@ -767,7 +768,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             
             if order_id:
                 # Wait for order processing
-                await asyncio.sleep(0)
+                await asyncio.sleep(1)
                 
                 order_details = await self.fetch_order_status(order_id)
                 
@@ -901,7 +902,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 )
                 
                 if order_id:
-                    await asyncio.sleep(0)
+                    await asyncio.sleep(1)
                     order_details = await self.fetch_order_status(order_id)
                     
                     if order_details and order_details['status'] == 'COMPLETE':
