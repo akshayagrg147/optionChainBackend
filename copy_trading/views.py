@@ -541,3 +541,70 @@ def get_funds(request):
 
     except Exception as e:
         return Response({"error": str(e)}, status=500)
+    
+
+
+
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from kiteconnect import KiteConnect
+import json
+
+class GetQuoteAPIView(APIView):
+    """
+    Fetch last traded price (LTP) for a single instrument using KiteConnect's quote() method.
+    """
+
+    def post(self, request):
+        api_key = request.data.get("api_key")
+        access_token = request.data.get("access_token")
+        instrument_key = request.data.get("instrument_key")
+
+        # ✅ Input validation
+        if not all([api_key, access_token, instrument_key]):
+            return Response(
+                {"error": "api_key, access_token, and instrument_key are required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            # ✅ Initialize Kite client
+            kite = KiteConnect(api_key=api_key)
+            kite.set_access_token(access_token)
+
+            # ✅ Fetch quote
+            quote = kite.quote([instrument_key])
+            print(f"📊 Quote response: {quote}")
+
+            if instrument_key in quote:
+                instrument_data = quote[instrument_key]
+                rest_ltp = instrument_data.get("last_price")
+
+                if rest_ltp:
+                    print(f"✅ LTP fetched successfully: {rest_ltp}")
+                    return Response(
+                        {"instrument_key": instrument_key, "last_price": rest_ltp},
+                        status=status.HTTP_200_OK
+                    )
+                else:
+                    print("❌ Last price not found in quote data")
+                    return Response(
+                        {"error": "Last price not found in quote data"},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
+
+            else:
+                print(f"❌ Instrument {instrument_key} not found in quote response")
+                return Response(
+                    {"error": f"Instrument {instrument_key} not found in quote"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+        except Exception as e:
+            print(f"❌ Error fetching quote: {str(e)}")
+            return Response(
+                {"error": f"Quote fetch error: {str(e)}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )

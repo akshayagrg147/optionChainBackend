@@ -20,5 +20,6 @@ urlpatterns = [
                path('zerodha-instrument/', ZerodhaInstrumentView.as_view(), name='zerodha_instrument_list_create'),
                path('zerodha-instrument/<int:pk>/', ZerodhaInstrumentView.as_view(), name='zerodha_instrument_detail'),
                path('api/zerodha/funds/', get_funds, name='get_funds'),
+               path('api/get-quote/', GetQuoteAPIView.as_view(), name='get-quote'),
 ]
 
