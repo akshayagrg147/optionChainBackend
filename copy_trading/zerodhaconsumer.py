@@ -10,65 +10,112 @@ import websockets
 import requests
 from google.protobuf.json_format import MessageToDict
 import logging
-from kiteconnect import KiteConnect, KiteTicker
 import pandas as pd
 import threading
 import re
 import traceback
 import websocket as _websocket_client
 from .setup_log import log_order_event, logger
+from dataclasses import dataclass, field
+from typing import Dict, Optional, Any
+
+# Conditional imports for simulation mode
+try:
+    from kiteconnect import KiteConnect, KiteTicker
+    REAL_KITE_AVAILABLE = True
+except ImportError:
+    REAL_KITE_AVAILABLE = False
+    KiteConnect = None
+    KiteTicker = None
+
+
+# Import hybrid wrapper
+from .hybrid_kite import HybridKiteConnect
+from .models import TradeSession, TradeTransaction, ZerodhaInstrument, FundInstrument
+from channels.db import database_sync_to_async
+import uuid
+
+@dataclass
+class UserState:
+    """Track individual user's trading state"""
+    user_id: str  # Unique identifier (api_key + access_token hash)
+    api_key: str
+    access_token: str
+    account_name: str
+    
+    # Trading parameters
+    trading_symbol: str
+    trading_symbol_2: Optional[str]
+    index_name: str
+    target_market_priceCE: float
+    target_market_pricePE: float
+    quantityCE: int
+    quantityPE: int
+    step: float
+    expected_profit_percent: float
+    total_amount: float
+    investable_amount: float
+    lot: int
+    reverse_Trade: str
+    
+    # Instrument details
+    kite: Optional[Any] = None  # Can be KiteConnect or KiteConnectSimulator
+    ce_token: Optional[int] = None
+    pe_token: Optional[int] = None
+    ce_trading_symbol: Optional[str] = None
+    pe_trading_symbol: Optional[str] = None
+    ce_reverse_token: Optional[int] = None
+    pe_reverse_token: Optional[int] = None
+    ce_reverse_trading_symbol: Optional[str] = None
+    pe_reverse_trading_symbol: Optional[str] = None
+    
+    # Trading state
+    order_placedCE: bool = False
+    order_placedPE: bool = False
+    sell_order_placed: bool = False
+    buy_token: Optional[int] = None
+    buy_trading_symbol: Optional[str] = None
+    buy_quantity: Optional[int] = None
+    buy_in_ltp: Optional[float] = None
+    sell_in_ltp: Optional[float] = None
+    ltp_at_order: Optional[float] = None
+    locked_ltp: Optional[float] = None
+    previous_ltp: Optional[float] = None
+    step_size: Optional[float] = None
+    reverse_token: Optional[int] = None
+    reverse_trading_symbol: Optional[str] = None
+    
+    # Locks for thread safety
+    order_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    last_tick_time: float = 0
+    last_buy_check_time: float = 0
 
 class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.kite = None
-        self.kws = None
+        self.users: Dict[str, UserState] = {}  # user_id -> UserState
+        self.kws = None  # Shared WebSocket connection
         self.loop = None
-        self.reset_trade_flags()
-        
-    def reset_trade_flags(self):
-        self.sell_order_placed = False
-        self.locked_ltp = None
-        self.previous_ltp = None
-        self.order_placedCE = False
-        self.order_placedPE = False
-        self.ltp_at_order = None
-        self.reverse_trade = None
-        self.toggle = True
-        self.buy_token = None
-        self.buy_trading_symbol = None
-        self.buy_quantity = None
-        self.buy_in_ltp = None
-        self.sell_in_ltp = None
-        self.new_invest_amount = None
-        self.latest_spot_price = None
         self.keep_running = True
-        self.nifty_token = None
-        self.ce_token = None
-        self.pe_token = None
-        self.ce_trading_symbol = None
-        self.pe_trading_symbol = None
-        self.ce_reverse_token = None
-        self.pe_reverse_token = None
-        self.ce_reverse_trading_symbol = None
-        self.pe_reverse_trading_symbol = None
-        self.index_name = "NIFTY"
-        self.instruments_cache = None
-        self.account_name = None
-        self.step = None
-        self.expected_profit_percent = None
-        self.target_market_priceCE = None
-        self.target_market_pricePE = None
-        self.current_subscribed_tokens = []
-        self.spot_price_only_mode = False
-        self.exchange_type = "NSE"
         
-        # ADD THESE CRITICAL FIXES
-        self.order_lock = asyncio.Lock()  # Prevent multiple order execution
-        self.last_tick_time = 0  # Rate limiting
-        self.tick_interval = 0.2  # Process ticks max every 200ms
-        self.last_buy_check_time = 0  # Separate rate limiting for buy checks
-        self.buy_check_interval = 0.5  # Check buy conditions every 500ms
+        self.is_simulation = True
+        
+        # Simulation mode: Use Hybrid Wrapper
+        self.hybrid_kite = None
+        
+        # Shared market data
+        self.latest_spot_price = None
+        self.nifty_token = None
+        self.index_name = "NIFTY"
+        self.exchange_type = "NSE"
+        self.instruments_cache = None
+        self.current_subscribed_tokens = []
+        
+        # Rate limiting for shared processing
+        self.last_tick_time = 0
+        self.tick_interval = 0.1  # Reduced for faster processing
+        self.last_buy_check_time = 0
+        self.buy_check_interval = 0.1  # Reduced for faster processing
         
     def log_order_event(self, account_name: str, title: str, data: dict):
         log_block = [f"\n{'='*20} {account_name.upper()} | {title} {'='*20}"]
@@ -76,46 +123,86 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             log_block.append(f"{key}: {value}")
         log_block.append('-' * 60)
         logger.info('\n'.join(log_block))
-    
-    def fetch_zerodha_user_name(self, api_key, access_token):
+
+
+
+    @database_sync_to_async
+    def get_django_user(self, api_key):
         try:
+            # Try to find user via ZerodhaInstrument using API key
+            ins = ZerodhaInstrument.objects.filter(api_key=api_key).first()
+            if ins:
+                return ins.user
+            
+            # Fallback: Try to find user via FundInstrument using API key
+            fund_ins = FundInstrument.objects.filter(api_key=api_key).first()
+            if fund_ins:
+                return fund_ins.user
+                
+            return None
+        except Exception as e:
+            print(f"Error fetching user: {e}")
+            return None
+
+    @database_sync_to_async
+    def create_trade_session(self, django_user, investable_amount):
+        try:
+            session_id = str(uuid.uuid4())
+            session = TradeSession.objects.create(
+                user=django_user,
+                session_id=session_id,
+                initial_capital=investable_amount,
+                current_capital=investable_amount
+            )
+            print(f"✅ Trade Session Created: {session_id}")
+            return session
+        except Exception as e:
+            print(f"❌ Error creating trade session: {e}")
+            return None
+    
+    def fetch_zerodha_user_name(self, api_key, access_token, is_simulation=False):
+        try:
+            if not REAL_KITE_AVAILABLE:
+                raise ImportError("kiteconnect library not available")
             kite = KiteConnect(api_key=api_key)
             kite.set_access_token(access_token)
+            
             profile = kite.profile()
             return profile.get('user_name', 'Unknown User')
         except Exception as e:
             print(f"❌ Exception while fetching user name: {str(e)}")
             return "Unknown User"
     
-    def get_instruments(self):
-        if not self.instruments_cache:
-            try:
-                nse_indices = ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"]
-                bse_indices = ["SENSEX", "BANKEX", "SX50"]
-                
-                if self.index_name in nse_indices:
-                    self.instruments_cache = self.kite.instruments("NFO")
-                    print(f"✅ Loaded {len(self.instruments_cache)} NFO instruments for {self.index_name}")
-                elif self.index_name in bse_indices:
-                    self.instruments_cache = self.kite.instruments("BFO")
-                    print(f"✅ Loaded {len(self.instruments_cache)} BFO instruments for {self.index_name}")
-                else:
-                    print(f"❌ Unsupported index: {self.index_name}")
-                    return []
-            except Exception as e:
-                print(f"❌ Error fetching instruments: {str(e)}")
-                return []
-        return self.instruments_cache
+    def get_user_id(self, api_key: str, access_token: str) -> str:
+        """Generate unique user ID"""
+        return f"{api_key}_{hash(access_token)}"
     
-    def get_instrument_details_by_trading_symbol(self, trading_symbol_input, index_name="NIFTY"):
+    def get_instruments(self, index_name: str, kite: KiteConnect):
+        """Get instruments for given index"""
+        try:
+            nse_indices = ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"]
+            bse_indices = ["SENSEX", "BANKEX", "SX50"]
+            
+            if index_name in nse_indices:
+                return kite.instruments("NFO")
+            elif index_name in bse_indices:
+                return kite.instruments("BFO")
+            else:
+                print(f"❌ Unsupported index: {index_name}")
+                return []
+        except Exception as e:
+            print(f"❌ Error fetching instruments: {str(e)}")
+            return []
+    
+    def get_instrument_details_by_trading_symbol(self, trading_symbol_input: str, index_name: str, kite: KiteConnect):
         """Get both token and trading symbol details for CE and PE"""
         print("🔍 Raw input symbol:", trading_symbol_input)
         
-        if not self.kite:
+        if not kite:
             print("❌ KiteConnect not initialized")
             return {"CE": {"token": None, "trading_symbol": None}, "PE": {"token": None, "trading_symbol": None}}
         
-        instruments = self.get_instruments()
+        instruments = self.get_instruments(index_name, kite)
         if not instruments:
             return {"CE": {"token": None, "trading_symbol": None}, "PE": {"token": None, "trading_symbol": None}}
         
@@ -187,63 +274,153 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             payload = json.loads(text_data)
             print("📨 Received message:", payload)
 
-            api_key = payload.get('api_key')
-            access_token = payload.get('access_token')
-            trading_symbol = payload.get('trading_symbol')
-            trading_symbol_2 = payload.get('trading_symbol_2')
-            self.index_name = payload.get('index_name', 'NIFTY')
-            target_market_priceCE = payload.get('target_market_price_CE')
-            target_market_pricePE = payload.get('target_market_price_PE')
-            quantityCE = payload.get('quantityCE')
-            quantityPE = payload.get('quantityPE')
-            step = payload.get('step')
-            expected_profit_percent = payload.get('profit_percent')
-            total_amount = payload.get("total_amount")
-            investable_amount = payload.get("investable_amount") 
-            lot = payload.get("lot")
-            reverse_Trade = payload.get("reverseTrade")
+            # Strict expectation: Payload must be a list of users
+            if isinstance(payload, list):
+                users_data = payload
+                # Check first user for simulation flag
+                if users_data and isinstance(users_data[0], dict):
+                    self.is_simulation = users_data[0].get('is_simulation', False)
+            else:
+                print("❌ Invalid payload format. Expected list of users.")
+                await self.send(text_data=json.dumps({
+                    'error': 'Invalid payload format. Expected list of users.'
+                }))
+                return
+
+            if self.is_simulation:
+                print("🎮 SIMULATION MODE ENABLED - Using Hybrid Simulator")
+
+            print(f"📊 Processing {len(users_data)} user(s)")
+
+            # Validate all users have same trading symbols and targets (for shared WebSocket)
+            if len(users_data) > 1:
+                first_user = users_data[0]
+                for i, user_data in enumerate(users_data[1:], 1):
+                    if (user_data.get('trading_symbol') != first_user.get('trading_symbol') or
+                        user_data.get('trading_symbol_2') != first_user.get('trading_symbol_2') or
+                        user_data.get('target_market_price_CE') != first_user.get('target_market_price_CE') or
+                        user_data.get('target_market_price_PE') != first_user.get('target_market_price_PE') or
+                        user_data.get('index_name', 'NIFTY') != first_user.get('index_name', 'NIFTY')):
+                        await self.send(text_data=json.dumps({
+                            'error': f'User {i+1} has different trading parameters. All users must have same symbols and targets for shared execution.'
+                        }))
+                        return
+
+            # Process all users
+            validated_users = []
+            for user_data in users_data:
+                api_key = user_data.get('api_key')
+                access_token = user_data.get('access_token')
+                trading_symbol = user_data.get('trading_symbol')
+                trading_symbol_2 = user_data.get('trading_symbol_2')
+                index_name = user_data.get('index_name', 'NIFTY')
+                target_market_priceCE = user_data.get('target_market_price_CE')
+                target_market_pricePE = user_data.get('target_market_price_PE')
+                quantityCE = user_data.get('quantityCE')
+                quantityPE = user_data.get('quantityPE')
+                step = user_data.get('step')
+                expected_profit_percent = user_data.get('profit_percent')
+                total_amount = user_data.get("total_amount")
+                investable_amount = user_data.get("investable_amount") 
+                lot = user_data.get("lot")
+                reverse_Trade = user_data.get("reverseTrade", "OFF")
+
+                if not api_key or not access_token or not trading_symbol:
+                    await self.send(text_data=json.dumps({
+                        'error': f'Missing required fields for user: api_key, access_token, trading_symbol'
+                    }))
+                    continue
+
+                if not target_market_priceCE or not target_market_pricePE or not step or not quantityCE or not quantityPE:
+                    await self.send(text_data=json.dumps({
+                        'error': f'Missing trading parameters for user'
+                    }))
+                    continue
+
+                try:
+                    # Initialize KiteConnect for this user (real or simulator)
+                    if self.is_simulation:
+                        # Hybrid Mode: Real Data + Simulated Orders
+                        if not REAL_KITE_AVAILABLE:
+                            raise ImportError("kiteconnect library not available. Real credentials required for Hybrid Simulation.")
+                        
+                        real_kite = KiteConnect(api_key=api_key)
+                        real_kite.set_access_token(access_token)
+                        
+                        kite = HybridKiteConnect(real_kite)
+                        # Use real profile fetch since we have real credentials
+                        account_name = self.fetch_zerodha_user_name(api_key, access_token, is_simulation=False)
+                    else:
+                        if not REAL_KITE_AVAILABLE:
+                            raise ImportError("kiteconnect library not available. Install with: pip install kiteconnect")
+                        kite = KiteConnect(api_key=api_key)
+                        kite.set_access_token(access_token)
+                        account_name = self.fetch_zerodha_user_name(api_key, access_token, is_simulation=False)
+                    
+                    # Verify authentication
+                    profile = kite.profile()
+                    print(f"✅ Authentication successful for user: {profile.get('user_name', 'Unknown')} {'(SIMULATION)' if self.is_simulation else ''}")
+
+                    user_id = self.get_user_id(api_key, access_token)
+                    
+                     # Create user state
+                    user_state = UserState(
+                        user_id=user_id,
+                        api_key=api_key,
+                        access_token=access_token,
+                        account_name=account_name,
+                        trading_symbol=trading_symbol,
+                        trading_symbol_2=trading_symbol_2,
+                        index_name=index_name,
+                        target_market_priceCE=float(target_market_priceCE),
+                        target_market_pricePE=float(target_market_pricePE),
+                        quantityCE=quantityCE,
+                        quantityPE=quantityPE,
+                        step=step,
+                        expected_profit_percent=expected_profit_percent,
+                        total_amount=total_amount,
+                        investable_amount=investable_amount,
+                        lot=lot,
+                        reverse_Trade=reverse_Trade,
+                        kite=kite
+                    )
+                    
+                    # Link user_state to hybrid kite for DB access
+                    if self.is_simulation and isinstance(kite, HybridKiteConnect):
+                        kite.user_state = user_state
+                        
+                        # Create DB Session
+                        django_user = await self.get_django_user(api_key)
+                        if django_user:
+                            session = await self.create_trade_session(django_user, float(investable_amount))
+                            if session:
+                                kite.trade_session = session  # Attach session to kite wrapper
+                        else:
+                            print("⚠️ Django user not found for API key, session not saved to DB")
+                    
+                    self.users[user_id] = user_state
+                    validated_users.append(user_state)
+                    
+                except Exception as e:
+                    await self.send(text_data=json.dumps({
+                        'error': f'KiteConnect initialization failed for user: {str(e)}'
+                    }))
+                    continue
+
+            if not validated_users:
+                await self.send(text_data=json.dumps({'error': 'No valid users to process'}))
+                return
+
+            # Use first user's data for shared setup (all should be same)
+            first_user = validated_users[0]
+            self.index_name = first_user.index_name
             
-            self.step = step
-            self.expected_profit_percent = expected_profit_percent
-            self.target_market_priceCE = float(target_market_priceCE) if target_market_priceCE else None
-            self.target_market_pricePE = float(target_market_pricePE) if target_market_pricePE else None
-            self.quantityCE = quantityCE
-            self.quantityPE = quantityPE
-            self.total_amount = total_amount
-            self.investable_amount = investable_amount
-            self.lot = lot
-            self.reverse_Trade = reverse_Trade
-
-            if not api_key or not access_token or not trading_symbol:
-                await self.send(text_data=json.dumps({'error': 'Missing required fields: api_key, access_token, trading_symbol'}))
-                return
-                
-            if not target_market_priceCE or not target_market_pricePE or not step or not quantityCE or not quantityPE:
-                await self.send(text_data=json.dumps({'error': 'Missing trading parameters'}))
-                return
-
-            try:
-                self.kite = KiteConnect(api_key=api_key)
-                self.kite.set_access_token(access_token)
-                print("✅ KiteConnect initialized successfully")
-                
-                self.account_name = self.fetch_zerodha_user_name(api_key, access_token)
-                
-            except Exception as e:
-                await self.send(text_data=json.dumps({'error': f'KiteConnect initialization failed: {str(e)}'}))
-                return
-
-            try:
-                profile = self.kite.profile()
-                print(f"✅ Authentication successful for user: {profile.get('user_name', 'Unknown')}")
-            except Exception as e:
-                await self.send(text_data=json.dumps({'error': f'Authentication failed: {str(e)}'}))
-                return
-
-            asyncio.create_task(self.fetch_and_stream_data(trading_symbol, trading_symbol_2))
+            # Setup shared market data stream
+            asyncio.create_task(self.fetch_and_stream_data(first_user.trading_symbol, first_user.trading_symbol_2, validated_users))
             
         except Exception as e:
             await self.send(text_data=json.dumps({'error': f'Error processing message: {str(e)}'}))
+            print(f"❌ Error in receive: {traceback.format_exc()}")
 
     async def update_subscription(self, new_tokens):
         """Update WebSocket subscription to only necessary tokens"""
@@ -264,77 +441,82 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             except Exception as e:
                 print(f"❌ Error updating subscription: {str(e)}")
 
-    async def place_zerodha_order(self, transaction_type, trading_symbol, quantity, order_type="MARKET", price=0, product=None, validity=None):
+    async def place_zerodha_order(self, user_state: UserState, transaction_type, trading_symbol, quantity, order_type="MARKET", price=0, product=None, validity=None):
         """Place order using Zerodha KiteConnect API with trading symbol"""
         try:
             nse_indices = ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"]
             bse_indices = ["SENSEX", "BANKEX", "SX50"]
             
-            if self.index_name in nse_indices:
-                exchange = self.kite.EXCHANGE_NFO
-            elif self.index_name in bse_indices:
-                exchange = self.kite.EXCHANGE_BFO
+            if user_state.index_name in nse_indices:
+                exchange = user_state.kite.EXCHANGE_NFO
+            elif user_state.index_name in bse_indices:
+                exchange = user_state.kite.EXCHANGE_BFO
             else:
-                exchange = self.kite.EXCHANGE_NFO
+                exchange = user_state.kite.EXCHANGE_NFO
             
             if product is None:
-                product = self.kite.PRODUCT_NRML
+                product = user_state.kite.PRODUCT_NRML
             if validity is None:
-                validity = self.kite.VALIDITY_DAY
+                validity = user_state.kite.VALIDITY_DAY
             
             if order_type.upper() == "MARKET":
-                order_id = self.kite.place_order(
-                    variety=self.kite.VARIETY_REGULAR,
+                order_id = user_state.kite.place_order(
+                    variety=user_state.kite.VARIETY_REGULAR,
                     exchange=exchange,
                     tradingsymbol=trading_symbol,
                     transaction_type=transaction_type,
                     quantity=quantity,
-                    order_type=self.kite.ORDER_TYPE_MARKET,
+                    order_type=user_state.kite.ORDER_TYPE_MARKET,
                     product=product,
                     validity=validity
                 )
             else:
-                order_id = self.kite.place_order(
-                    variety=self.kite.VARIETY_REGULAR,
+                order_id = user_state.kite.place_order(
+                    variety=user_state.kite.VARIETY_REGULAR,
                     exchange=exchange,
                     tradingsymbol=trading_symbol,
                     transaction_type=transaction_type,
                     quantity=quantity,
-                    order_type=self.kite.ORDER_TYPE_LIMIT,
+                    order_type=user_state.kite.ORDER_TYPE_LIMIT,
                     price=price,
                     product=product,
                     validity=validity
                 )
             
-            print(f"✅ Order placed successfully. Order ID: {order_id}")
+            print(f"✅ Order placed successfully for {user_state.account_name}. Order ID: {order_id}")
             return order_id
             
         except Exception as e:
-            print(f"❌ Order placement failed: {str(e)}")
+            print(f"❌ Order placement failed for {user_state.account_name}: {str(e)}")
             raise e
 
-    async def fetch_order_status(self, order_id):
+    async def fetch_order_status(self, user_state: UserState, order_id):
         """Fetch order status from Zerodha"""
         try:
-            orders = self.kite.orders()
+            orders = user_state.kite.orders()
             for order in orders:
                 if order['order_id'] == order_id:
                     return order
             return None
         except Exception as e:
-            print(f"❌ Error fetching order status: {str(e)}")
+            print(f"❌ Error fetching order status for {user_state.account_name}: {str(e)}")
             return None
 
-    async def fetch_and_stream_data(self, trading_symbol, trading_symbol_2):
+    async def fetch_and_stream_data(self, trading_symbol, trading_symbol_2, users: list):
+        """Setup shared market data stream for all users"""
         try:
+            # Use first user's kite for instrument lookup (all should have same index)
+            first_user = users[0]
+            kite = first_user.kite
+            
             nse_indices = ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"]
             bse_indices = ["SENSEX", "BANKEX", "SX50"]
             
             if self.index_name in nse_indices:
-                instruments = self.kite.instruments("NSE")
+                instruments = kite.instruments("NSE")
                 self.exchange_type = "NSE"
             elif self.index_name in bse_indices:
-                instruments = self.kite.instruments("BSE")
+                instruments = kite.instruments("BSE")
                 self.exchange_type = "BSE"
             else:
                 await self.send(text_data=json.dumps({'error': f'Unsupported index: {self.index_name}'}))
@@ -367,10 +549,11 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 return
             print(f"✅ {self.index_name} token found: {self.nifty_token}")
 
-            ce_details = self.get_instrument_details_by_trading_symbol(trading_symbol, self.index_name)
+            # Get instrument details for all users (they should be same)
+            ce_details = self.get_instrument_details_by_trading_symbol(trading_symbol, self.index_name, kite)
             
             if trading_symbol_2:
-                pe_details = self.get_instrument_details_by_trading_symbol(trading_symbol_2, self.index_name)
+                pe_details = self.get_instrument_details_by_trading_symbol(trading_symbol_2, self.index_name, kite)
             else:
                 pe_details = {"CE": {"token": None, "trading_symbol": None}, "PE": {"token": None, "trading_symbol": None}}
                 if ce_details["CE"]["token"]:
@@ -380,22 +563,33 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                     pe_details["CE"]["token"] = ce_details["CE"]["token"]
                     pe_details["CE"]["trading_symbol"] = ce_details["CE"]["trading_symbol"]
             
-            self.ce_token = ce_details["CE"]["token"]
-            self.ce_trading_symbol = ce_details["CE"]["trading_symbol"]
-            self.ce_reverse_token = ce_details["PE"]["token"]
-            self.ce_reverse_trading_symbol = ce_details["PE"]["trading_symbol"]
+            ce_token = ce_details["CE"]["token"]
+            ce_trading_symbol = ce_details["CE"]["trading_symbol"]
+            ce_reverse_token = ce_details["PE"]["token"]
+            ce_reverse_trading_symbol = ce_details["PE"]["trading_symbol"]
             
-            self.pe_token = pe_details["PE"]["token"]
-            self.pe_trading_symbol = pe_details["PE"]["trading_symbol"]
-            self.pe_reverse_token = pe_details["CE"]["token"]
-            self.pe_reverse_trading_symbol = pe_details["CE"]["trading_symbol"]
+            pe_token = pe_details["PE"]["token"]
+            pe_trading_symbol = pe_details["PE"]["trading_symbol"]
+            pe_reverse_token = pe_details["CE"]["token"]
+            pe_reverse_trading_symbol = pe_details["CE"]["trading_symbol"]
 
-            print("🎯 CE Token:", self.ce_token, "CE Trading Symbol:", self.ce_trading_symbol)
-            print("🎯 CE REVERSE Token:", self.ce_reverse_token, "CE Reverse Trading Symbol:", self.ce_reverse_trading_symbol)
-            print("🎯 PE Token:", self.pe_token, "PE Trading Symbol:", self.pe_trading_symbol)
-            print("🎯 PE REVERSE Token:", self.pe_reverse_token, "PE Reverse Trading Symbol:", self.pe_reverse_trading_symbol)
+            print("🎯 CE Token:", ce_token, "CE Trading Symbol:", ce_trading_symbol)
+            print("🎯 CE REVERSE Token:", ce_reverse_token, "CE Reverse Trading Symbol:", ce_reverse_trading_symbol)
+            print("🎯 PE Token:", pe_token, "PE Trading Symbol:", pe_trading_symbol)
+            print("🎯 PE REVERSE Token:", pe_reverse_token, "PE Reverse Trading Symbol:", pe_reverse_trading_symbol)
 
-            initial_tokens = [self.ce_token, self.pe_token, self.nifty_token]
+            # Store instrument details in all user states
+            for user in users:
+                user.ce_token = ce_token
+                user.ce_trading_symbol = ce_trading_symbol
+                user.ce_reverse_token = ce_reverse_token
+                user.ce_reverse_trading_symbol = ce_reverse_trading_symbol
+                user.pe_token = pe_token
+                user.pe_trading_symbol = pe_trading_symbol
+                user.pe_reverse_token = pe_reverse_token
+                user.pe_reverse_trading_symbol = pe_reverse_trading_symbol
+
+            initial_tokens = [ce_token, pe_token, self.nifty_token]
             initial_tokens = [token for token in initial_tokens if token is not None]
 
             if not initial_tokens:
@@ -406,9 +600,16 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
 
             _websocket_client.enableTrace(True)
 
+            # Use first user's credentials for WebSocket (all should work)
+            # Use first user's credentials for WebSocket (all should work)
             try:
-                self.kws = KiteTicker(self.kite.api_key, self.kite.access_token)
-                print("✅ KiteTicker object created")
+                # Hybrid Simulation uses REAL Market Data
+                if not REAL_KITE_AVAILABLE:
+                    raise ImportError("kiteconnect library not available")
+                
+                self.kws = KiteTicker(kite.api_key, kite.access_token)
+                print(f"✅ KiteTicker object created ({'Hybrid Simulation' if self.is_simulation else 'Real Trading'})")
+
             except Exception as e:
                 error_msg = f"❌ KiteTicker object creation failed: {str(e)}"
                 print(error_msg)
@@ -420,10 +621,14 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                     fut = asyncio.run_coroutine_threadsafe(
                         self.send(text_data=json.dumps(payload)), self.loop
                     )
-                    try:
-                        fut.result(timeout=3)
-                    except Exception:
-                        print("❌ Failed to send JSON payload to client")
+                    
+                    def handle_exception(future):
+                        try:
+                            future.result()
+                        except Exception as e:
+                            print(f"❌ Failed to send JSON payload to client: {str(e)}")
+
+                    fut.add_done_callback(handle_exception)
 
             def on_ticks(ws, ticks):
                 try:
@@ -437,8 +642,8 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                     ws.subscribe(initial_tokens)
                     ws.set_mode(ws.MODE_FULL, initial_tokens)
                     self.current_subscribed_tokens = initial_tokens
-                    print(f"✅ Subscribed to {len(initial_tokens)} instruments")
-                    safe_send_json({'info': 'Subscribed to tokens', 'tokens': initial_tokens})
+                    print(f"✅ Subscribed to {len(initial_tokens)} instruments for {len(users)} users")
+                    safe_send_json({'info': f'Subscribed to tokens for {len(users)} users', 'tokens': initial_tokens, 'user_count': len(users)})
                 except Exception:
                     print("❌ Subscribe failure:", traceback.format_exc())
                     safe_send_json({'error': 'Subscribe failed'})
@@ -492,9 +697,9 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             await self.send(text_data=json.dumps({'error': error_msg}))
 
     async def process_ticks(self, ticks):
-        """Process ticks with rate limiting"""
-        # ADD RATE LIMITING
+        """Process ticks with rate limiting - handles all users"""
         current_time = time.time()
+        # print(f"📨 Processing {len(ticks)} ticks... Last tick: {self.last_tick_time}, Interval: {self.tick_interval}") 
         if current_time - self.last_tick_time < self.tick_interval:
             return
             
@@ -512,7 +717,11 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             
             if instrument_token == self.nifty_token:
                 self.latest_spot_price = ltp
-                if not self.order_placedCE and not self.order_placedPE:
+                print(f"📉 NIFTY Spot Updated: {ltp}")
+                
+                # Send spot price to frontend
+                active_users = [u for u in self.users.values() if not u.order_placedCE and not u.order_placedPE]
+                if active_users:
                     result = {
                         'type': 'SPOT',
                         'instrument_token': instrument_token,
@@ -526,18 +735,26 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                     }
                     await self.send(text_data=json.dumps(result))
                 
-                # Check for buy conditions with rate limiting
-                await self.check_buy_conditions(instrument_token, ltp, timestamp)
+                # Check buy conditions for all users in parallel
+                await self.check_buy_conditions_all_users(instrument_token, ltp, timestamp)
                 continue
             
-            if self.order_placedCE or self.order_placedPE:
-                if instrument_token == self.buy_token:
-                    await self.process_bought_token_tick(instrument_token, ltp, timestamp, volume, oi, change)
-            else:
+            # Process bought tokens for all users in parallel
+            sell_tasks = []
+            for user_id, user_state in self.users.items():
+                if (user_state.order_placedCE or user_state.order_placedPE) and instrument_token == user_state.buy_token:
+                    sell_tasks.append(self.process_bought_token_tick(user_state, instrument_token, ltp, timestamp, volume, oi, change))
+            
+            if sell_tasks:
+                await asyncio.gather(*sell_tasks, return_exceptions=True)
+            
+            # Send option data for users waiting to buy
+            active_users = [u for u in self.users.values() if not u.order_placedCE and not u.order_placedPE]
+            if active_users:
                 instrument_type = "UNKNOWN"
-                if instrument_token == self.ce_token:
+                if instrument_token == active_users[0].ce_token:
                     instrument_type = "CE"
-                elif instrument_token == self.pe_token:
+                elif instrument_token == active_users[0].pe_token:
                     instrument_type = "PE"
                 
                 if instrument_type in ["CE", "PE"]:
@@ -555,13 +772,64 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                     }
                     await self.send(text_data=json.dumps(result))
 
-    async def process_bought_token_tick(self, instrument_token, ltp, timestamp, volume, oi, change):
+    async def check_buy_conditions_all_users(self, instrument_token, ltp, timestamp):
+        """Check buy conditions for all users in parallel"""
+        current_time = time.time()
+        if current_time - self.last_buy_check_time < self.buy_check_interval:
+            return
+            
+        self.last_buy_check_time = current_time
+        
+        # Get all users who haven't placed orders yet
+        users_to_check = [u for u in self.users.values() if not u.order_placedCE and not u.order_placedPE]
+        
+        if not users_to_check:
+            return
+        
+        # Check conditions for all users
+        buy_tasks = []
+        for user_state in users_to_check:
+            print(f"🔍 Checking {user_state.account_name} | Spot: {self.latest_spot_price} | CE Target: {user_state.target_market_priceCE} | PE Target: {user_state.target_market_pricePE}")
+            # CE Buy Condition
+            if (self.latest_spot_price is not None and 
+                user_state.target_market_priceCE <= float(self.latest_spot_price)):
+                
+                if not user_state.ce_trading_symbol:
+                    print(f"❌ Skipping CE Buy for {user_state.account_name}: Trading Symbol not found")
+                    # Disable further checks for this user to prevent log spam
+                    user_state.order_placedCE = True 
+                    continue
+
+                print(f"✅ CE Buy Condition Met for {user_state.account_name}: {self.latest_spot_price}, Target: {user_state.target_market_priceCE}")
+                buy_tasks.append(self.place_buy_order(user_state, user_state.ce_token, user_state.ce_trading_symbol, user_state.quantityCE, "CE", timestamp))
+            
+            # PE Buy Condition
+            elif (self.latest_spot_price is not None and
+                  user_state.target_market_pricePE >= float(self.latest_spot_price)):
+                
+                if not user_state.pe_trading_symbol:
+                    print(f"❌ Skipping PE Buy for {user_state.account_name}: Trading Symbol not found")
+                    # Disable further checks for this user (using flag to stop loop)
+                    user_state.order_placedPE = True
+                    continue
+
+                print(f"✅ PE Buy Condition Met for {user_state.account_name}: {self.latest_spot_price}, Target: {user_state.target_market_pricePE}")
+                buy_tasks.append(self.place_buy_order(user_state, user_state.pe_token, user_state.pe_trading_symbol, user_state.quantityPE, "PE", timestamp))
+        
+        # Execute all buy orders in parallel
+        if buy_tasks:
+            print(f"🚀 Executing {len(buy_tasks)} buy orders in parallel...")
+            await asyncio.gather(*buy_tasks, return_exceptions=True)
+
+    async def process_bought_token_tick(self, user_state: UserState, instrument_token, ltp, timestamp, volume, oi, change):
         """Process ticks only for the bought token"""
         try:
             current_ltp = float(ltp)
             
             result = {
                 'type': 'BOUGHT_OPTION',
+                'user_id': user_state.user_id,
+                'account_name': user_state.account_name,
                 'instrument_token': instrument_token,
                 'ltp': ltp,
                 'volume': volume,
@@ -571,246 +839,233 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 'index_name': self.index_name,
                 'exchange': self.exchange_type,
                 'change': change,
-                'buy_price': self.buy_in_ltp,
-                'locked_ltp': self.locked_ltp
+                'buy_price': user_state.buy_in_ltp,
+                'locked_ltp': user_state.locked_ltp
             }
             await self.send(text_data=json.dumps(result))
             
             # Process for trailing SL
-            await self.process_trailing_sl(instrument_token, current_ltp, timestamp)
+            await self.process_trailing_sl(user_state, instrument_token, current_ltp, timestamp)
             
         except Exception as e:
-            print(f"❌ Error processing bought token tick: {str(e)}")
+            print(f"❌ Error processing bought token tick for {user_state.account_name}: {str(e)}")
 
-    async def process_trailing_sl(self, instrument_token, current_ltp, timestamp):
+    async def process_trailing_sl(self, user_state: UserState, instrument_token, current_ltp, timestamp):
         """Process trailing stop loss for bought token"""
-        # ADD RATE LIMITING
         current_time = time.time()
-        if current_time - self.last_tick_time < self.tick_interval:
+        if current_time - user_state.last_tick_time < self.tick_interval:
             return
             
+        user_state.last_tick_time = current_time
+            
         try:
-            if not self.sell_order_placed and self.ltp_at_order is not None:
+            if not user_state.sell_order_placed and user_state.ltp_at_order is not None:
                 
-                if self.locked_ltp is None:
-                    self.step_size = round(float(self.ltp_at_order) * self.step / 100, 2)
-                    self.locked_ltp = round(float(self.ltp_at_order) - self.step_size, 2)
-                    self.previous_ltp = float(self.ltp_at_order)
+                if user_state.locked_ltp is None:
+                    user_state.step_size = round(float(user_state.ltp_at_order) * user_state.step / 100, 2)
+                    user_state.locked_ltp = round(float(user_state.ltp_at_order) - user_state.step_size, 2)
+                    user_state.previous_ltp = float(user_state.ltp_at_order)
                     
                     await self.send(text_data=json.dumps({
-                        'init_SL': True,    
-                        'locked_LTP': self.locked_ltp,
-                        'step_size': self.step_size
+                        'init_SL': True,
+                        'user_id': user_state.user_id,
+                        'account_name': user_state.account_name,
+                        'locked_LTP': user_state.locked_ltp,
+                        'step_size': user_state.step_size
                     }))
                 
-                print(f"📈 Buy: {self.ltp_at_order} | Locked SL: {self.locked_ltp} | Live LTP: {current_ltp}")
+                print(f"📈 {user_state.account_name} - Buy: {user_state.ltp_at_order} | Locked SL: {user_state.locked_ltp} | Live LTP: {current_ltp}")
                 
-                if current_ltp > self.previous_ltp:
-                    while current_ltp >= self.locked_ltp + self.step_size:
-                        self.locked_ltp = round(self.locked_ltp + self.step_size, 2)
+                if current_ltp > user_state.previous_ltp:
+                    while current_ltp >= user_state.locked_ltp + user_state.step_size:
+                        user_state.locked_ltp = round(user_state.locked_ltp + user_state.step_size, 2)
                     
-                    if self.locked_ltp == self.ltp_at_order:
-                        self.locked_ltp = round(self.locked_ltp - self.step_size, 2)
+                    if user_state.locked_ltp == user_state.ltp_at_order:
+                        user_state.locked_ltp = round(user_state.locked_ltp - user_state.step_size, 2)
                 
-                pnl_percent = round(((current_ltp - float(self.ltp_at_order)) / float(self.ltp_at_order)) * 100, 2)
-                print(f"📈 Buy: {self.ltp_at_order} | Locked SL: {self.locked_ltp} | Live LTP: {current_ltp} | P&L: {pnl_percent}%")
+                pnl_percent = round(((current_ltp - float(user_state.ltp_at_order)) / float(user_state.ltp_at_order)) * 100, 2)
+                print(f"📈 {user_state.account_name} - Buy: {user_state.ltp_at_order} | Locked SL: {user_state.locked_ltp} | Live LTP: {current_ltp} | P&L: {pnl_percent}%")
 
                 await self.send(text_data=json.dumps({
                     'pnl_update': True,
+                    'user_id': user_state.user_id,
+                    'account_name': user_state.account_name,
                     'current_ltp': current_ltp,
                     'spot': self.latest_spot_price,
                     'pnl_percent': pnl_percent,
-                    'locked_ltp': self.locked_ltp
+                    'locked_ltp': user_state.locked_ltp
                 }))
 
-                # CRITICAL FIX: Add lock to prevent multiple sell executions
-                if ((current_ltp <= self.locked_ltp and current_ltp < self.previous_ltp) or 
-                    (current_ltp < self.locked_ltp)):
+                # Check sell condition
+                if ((current_ltp <= user_state.locked_ltp and current_ltp < user_state.previous_ltp) or 
+                    (current_ltp < user_state.locked_ltp)):
                     
-                    print(f'🚨 Sell condition triggered for token: {self.buy_token}')
-                    async with self.order_lock:
-                        if not self.sell_order_placed:  # Double check inside lock
-                            await self.place_sell_order(current_ltp)
+                    # Double check flag effectively to prevent multiple triggers
+                    if user_state.sell_order_placed:
+                         return
+
+                    user_state.sell_order_placed = True
+                    print(f'🚨 Sell condition triggered for {user_state.account_name}, token: {user_state.buy_token}')
+                    await self.place_sell_order(user_state, current_ltp, force_execution=True)
                 
-                self.previous_ltp = current_ltp
+                user_state.previous_ltp = current_ltp
                 
         except Exception as e:
-            print(f"❌ Error in trailing SL: {str(e)}")
+            print(f"❌ Error in trailing SL for {user_state.account_name}: {str(e)}")
 
-    async def check_buy_conditions(self, instrument_token, ltp, timestamp):
-        """Check conditions for placing buy orders"""
-        # ADD RATE LIMITING FOR BUY CHECKS
-        current_time = time.time()
-        if current_time - self.last_buy_check_time < self.buy_check_interval:
-            return
-            
-        self.last_buy_check_time = current_time
-        
-        # CRITICAL FIX: Add lock to prevent multiple buy executions
-        async with self.order_lock:
-            try:
-                # DOUBLE CHECK inside lock
-                if self.order_placedCE or self.order_placedPE:
-                    return
-                    
-                # CE Buy Condition
-                if (self.latest_spot_price is not None and 
-                    self.target_market_priceCE <= float(self.latest_spot_price)):
-                    
-                    print(f"✅ CE Buy Condition Met: {self.latest_spot_price}, Target: {self.target_market_priceCE}")
-                    # SET FLAGS IMMEDIATELY
-                    self.order_placedCE = True
-                    self.order_placedPE = True
-                    await self.place_buy_order(self.ce_token, self.ce_trading_symbol, self.quantityCE, "CE", timestamp)
-                    return
-                
-                # PE Buy Condition  
-                if (self.latest_spot_price is not None and
-                    self.target_market_pricePE >= float(self.latest_spot_price)):
-                    
-                    print(f"✅ PE Buy Condition Met: {self.latest_spot_price}, Target: {self.target_market_pricePE}")
-                    # SET FLAGS IMMEDIATELY
-                    self.order_placedCE = True
-                    self.order_placedPE = True
-                    await self.place_buy_order(self.pe_token, self.pe_trading_symbol, self.quantityPE, "PE", timestamp)
-                    
-            except Exception as e:
-                print(f"❌ Error in check_buy_conditions: {str(e)}")
-
-    async def place_buy_order(self, token, trading_symbol, quantity, option_type, timestamp):
+    async def place_buy_order(self, user_state: UserState, token, trading_symbol, quantity, option_type, timestamp):
         """Place buy order for CE or PE using trading symbol"""
-        # CRITICAL: Lock is already acquired in check_buy_conditions, but double check
-        try:
-            print(f'🎯 Placing BUY order - Token: {token}, Trading Symbol: {trading_symbol}, Type: {option_type}, Qty: {quantity}')
-            
-            if not trading_symbol:
-                raise ValueError(f"Trading symbol not found for {option_type}")
-            
-            order_id = await self.place_zerodha_order(
-                transaction_type=self.kite.TRANSACTION_TYPE_BUY,
-                trading_symbol=trading_symbol,
-                quantity=quantity,
-                order_type=self.kite.ORDER_TYPE_MARKET,
-                product=self.kite.PRODUCT_NRML,
-                validity=self.kite.VALIDITY_DAY
-            )
-            
-            if order_id:
-                # INCREASE DELAY to ensure order is processed
-                await asyncio.sleep(1)
-                
-                order_details = await self.fetch_order_status(order_id)
-                
-                if order_details and order_details['status'] == 'COMPLETE':
-                    # Flags already set, just update other values
-                    self.buy_token = token
-                    self.buy_trading_symbol = trading_symbol
-                    self.buy_quantity = quantity
-                    self.buy_in_ltp = float(order_details['average_price'])
-                    self.ltp_at_order = self.buy_in_ltp
-                    
-                    if option_type == "CE":
-                        self.reverse_token = self.ce_reverse_token
-                        self.reverse_trading_symbol = self.ce_reverse_trading_symbol
-                    else:
-                        self.reverse_token = self.pe_reverse_token
-                        self.reverse_trading_symbol = self.pe_reverse_trading_symbol
-                    
-                    new_tokens = [self.buy_token, self.nifty_token]
-                    await self.update_subscription(new_tokens)
-                    
-                    await self.send(text_data=json.dumps({
-                        'message': 'Order placed successfully...Waiting for square off',
-                        'BUY_LTP': self.buy_in_ltp,
-                        'Type': option_type,
-                        'subscription_updated': True
-                    }))
-                    
-                    self.log_order_event(
-                        self.account_name,
-                        "✅ Buy Order Placed",
-                        {
-                            'Token_Purchase': self.buy_token,
-                            'Trading_Symbol': self.buy_trading_symbol,
-                            'Market Value': self.latest_spot_price,
-                            'Quantity': quantity,
-                            'BUY LTP': self.buy_in_ltp,
-                            "Total Amount": self.total_amount,
-                            "Investable Amount": self.investable_amount,
-                            "Time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                        }
-                    )
-                else:
-                    # RESET FLAGS if order failed
-                    self.order_placedCE = False
-                    self.order_placedPE = False
-                    error_msg = order_details.get('status_message', 'Unknown error') if order_details else 'Order not completed'
-                    self.log_order_event(
-                        self.account_name,
-                        "❌ BUY ORDER FAILED",
-                        {
-                            "Error": error_msg
-                        }
-                    )
-                    await self.send(text_data=json.dumps({
-                        'message': 'Order Failed'    
-                    }))
-                    
-        except Exception as e:
-            # RESET FLAGS on exception
-            self.order_placedCE = False
-            self.order_placedPE = False
-            print(f"❌ Error placing buy order: {str(e)}")
-            await self.send(text_data=json.dumps({'error': f'Order exception: {str(e)}'}))
-
-    async def place_sell_order(self, current_ltp):
-        """Place sell order and handle reverse trade if needed"""
-        # CRITICAL FIX: Add lock to prevent multiple sell executions
-        async with self.order_lock:
+        async with user_state.order_lock:
             try:
-                # DOUBLE CHECK inside lock
-                if self.sell_order_placed:
-                    print("🔄 Sell order already placed, skipping...")
+                # Double check inside lock
+                if user_state.order_placedCE or user_state.order_placedPE:
                     return
-                    
-                print(f'🎯 Placing SELL order - Token: {self.buy_token}, Trading Symbol: {self.buy_trading_symbol}, Qty: {self.buy_quantity}')
                 
-                if not self.buy_trading_symbol:
-                    raise ValueError("Buy trading symbol not found")
+                print(f'🎯 Placing BUY order for {user_state.account_name} - Token: {token}, Trading Symbol: {trading_symbol}, Type: {option_type}, Qty: {quantity}')
                 
-                # SET FLAG IMMEDIATELY
-                self.sell_order_placed = True
+                if not trading_symbol:
+                    raise ValueError(f"Trading symbol not found for {option_type}")
+                
+                # Set flags immediately to prevent duplicate orders
+                user_state.order_placedCE = True
+                user_state.order_placedPE = True
                 
                 order_id = await self.place_zerodha_order(
-                    transaction_type=self.kite.TRANSACTION_TYPE_SELL,
-                    trading_symbol=self.buy_trading_symbol,
-                    quantity=self.buy_quantity,
-                    order_type=self.kite.ORDER_TYPE_MARKET,
-                    product=self.kite.PRODUCT_NRML,
-                    validity=self.kite.VALIDITY_DAY
+                    user_state,
+                    transaction_type=user_state.kite.TRANSACTION_TYPE_BUY,
+                    trading_symbol=trading_symbol,
+                    quantity=quantity,
+                    order_type=user_state.kite.ORDER_TYPE_MARKET,
+                    product=user_state.kite.PRODUCT_NRML,
+                    validity=user_state.kite.VALIDITY_DAY
                 )
                 
                 if order_id:
-                    # INCREASE DELAY
-                    await asyncio.sleep(1)
+                    # Reduced delay for faster execution
+                    await asyncio.sleep(0.5)
                     
-                    order_details = await self.fetch_order_status(order_id)
+                    order_details = await self.fetch_order_status(user_state, order_id)
                     
                     if order_details and order_details['status'] == 'COMPLETE':
-                        self.sell_in_ltp = float(order_details['average_price'])
-                        PnL = round(((self.sell_in_ltp - self.buy_in_ltp) / self.buy_in_ltp) * 100, 2)
+                        user_state.buy_token = token
+                        user_state.buy_trading_symbol = trading_symbol
+                        user_state.buy_quantity = quantity
+                        user_state.buy_in_ltp = float(order_details['average_price'])
+                        user_state.ltp_at_order = user_state.buy_in_ltp
+                        
+                        if option_type == "CE":
+                            user_state.reverse_token = user_state.ce_reverse_token
+                            user_state.reverse_trading_symbol = user_state.ce_reverse_trading_symbol
+                        else:
+                            user_state.reverse_token = user_state.pe_reverse_token
+                            user_state.reverse_trading_symbol = user_state.pe_reverse_trading_symbol
+                        
+                        # Update subscription to include bought token
+                        new_tokens = list(set(self.current_subscribed_tokens + [user_state.buy_token]))
+                        await self.update_subscription(new_tokens)
+                        
+                        await self.send(text_data=json.dumps({
+                            'message': 'Order placed successfully...Waiting for square off',
+                            'user_id': user_state.user_id,
+                            'account_name': user_state.account_name,
+                            'BUY_LTP': user_state.buy_in_ltp,
+                            'Type': option_type,
+                            'subscription_updated': True
+                        }))
                         
                         self.log_order_event(
-                            self.account_name,
+                            user_state.account_name,
+                            "✅ Buy Order Placed",
+                            {
+                                'Token_Purchase': user_state.buy_token,
+                                'Trading_Symbol': user_state.buy_trading_symbol,
+                                'Market Value': self.latest_spot_price,
+                                'Quantity': quantity,
+                                'BUY LTP': user_state.buy_in_ltp,
+                                "Total Amount": user_state.total_amount,
+                                "Investable Amount": user_state.investable_amount,
+                                "Time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                            }
+                        )
+                    else:
+                        # Reset flags if order failed
+                        user_state.order_placedCE = False
+                        user_state.order_placedPE = False
+                        error_msg = order_details.get('status_message', 'Unknown error') if order_details else 'Order not completed'
+                        self.log_order_event(
+                            user_state.account_name,
+                            "❌ BUY ORDER FAILED",
+                            {
+                                "Error": error_msg
+                            }
+                        )
+                        await self.send(text_data=json.dumps({
+                            'message': 'Order Failed',
+                            'user_id': user_state.user_id,
+                            'account_name': user_state.account_name
+                        }))
+                    
+            except Exception as e:
+                # Reset flags on exception
+                user_state.order_placedCE = False
+                user_state.order_placedPE = False
+                print(f"❌ Error placing buy order for {user_state.account_name}: {str(e)}")
+                await self.send(text_data=json.dumps({
+                    'error': f'Order exception: {str(e)}',
+                    'user_id': user_state.user_id,
+                    'account_name': user_state.account_name
+                }))
+
+    async def place_sell_order(self, user_state: UserState, current_ltp, force_execution=False):
+        """Place sell order and handle reverse trade if needed"""
+        async with user_state.order_lock:
+            try:
+
+                print(f'Placing SELL order for {user_state.account_name} - Token: {user_state.buy_token}, Qty: {user_state.buy_quantity}')
+                # Double check inside lock
+                if user_state.sell_order_placed and not force_execution:
+                    print(f"🔄 Sell order already placed for {user_state.account_name}, skipping...")
+                    return
+                    
+                print(f'🎯 Placing SELL order for {user_state.account_name} - Token: {user_state.buy_token}, Trading Symbol: {user_state.buy_trading_symbol}, Qty: {user_state.buy_quantity}')
+                
+                if not user_state.buy_trading_symbol:
+                    raise ValueError("Buy trading symbol not found")
+                
+                # Set flag immediately
+                user_state.sell_order_placed = True
+                
+                order_id = await self.place_zerodha_order(
+                    user_state,
+                    transaction_type=user_state.kite.TRANSACTION_TYPE_SELL,
+                    trading_symbol=user_state.buy_trading_symbol,
+                    quantity=user_state.buy_quantity,
+                    order_type=user_state.kite.ORDER_TYPE_MARKET,
+                    product=user_state.kite.PRODUCT_NRML,
+                    validity=user_state.kite.VALIDITY_DAY
+                )
+                
+                if order_id:
+                    # Reduced delay for faster execution
+                    await asyncio.sleep(0.5)
+                    
+                    order_details = await self.fetch_order_status(user_state, order_id)
+                    
+                    if order_details and order_details['status'] == 'COMPLETE':
+                        user_state.sell_in_ltp = float(order_details['average_price'])
+                        PnL = round(((user_state.sell_in_ltp - user_state.buy_in_ltp) / user_state.buy_in_ltp) * 100, 2)
+                        
+                        self.log_order_event(
+                            user_state.account_name,
                             "✅ SELL Order Placed",
                             {
-                                'Token_Purchase': self.buy_token,
-                                'Trading_Symbol': self.buy_trading_symbol,
+                                'Token_Purchase': user_state.buy_token,
+                                'Trading_Symbol': user_state.buy_trading_symbol,
                                 'Market Value': self.latest_spot_price,
-                                'SELL LTP': self.sell_in_ltp,
-                                'Quantity': self.buy_quantity,
-                                "Total Amount": self.total_amount,
-                                "Investable Amount": self.investable_amount,
+                                'SELL LTP': user_state.sell_in_ltp,
+                                'Quantity': user_state.buy_quantity,
+                                "Total Amount": user_state.total_amount,
+                                "Investable Amount": user_state.investable_amount,
                                 "P & L percent": PnL,
                                 "Time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                             }
@@ -818,139 +1073,176 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                         
                         await self.send(text_data=json.dumps({
                             'message': 'SELL Order placed successfully',
-                            'SELL_LTP': self.sell_in_ltp,
+                            'user_id': user_state.user_id,
+                            'account_name': user_state.account_name,
+                            'SELL_LTP': user_state.sell_in_ltp,
                             "pnl_percentage": PnL,
                         }))
                         
-                        if self.reverse_Trade == "ON" and PnL < self.expected_profit_percent:
-                            await self.execute_reverse_trade(PnL)
+                        if user_state.reverse_Trade == "ON" and PnL < user_state.expected_profit_percent:
+                            await self.execute_reverse_trade(user_state, PnL)
                         else:
-                            self.reset_trade_flags()
+                            # Reset flags
+                            user_state.order_placedCE = False
+                            user_state.order_placedPE = False
+                            user_state.sell_order_placed = False
+                            user_state.buy_token = None
+                            user_state.buy_trading_symbol = None
+                            user_state.buy_quantity = None
+                            user_state.buy_in_ltp = None
+                            user_state.ltp_at_order = None
+                            user_state.locked_ltp = None
+                            user_state.previous_ltp = None
+                            
                             await self.send(text_data=json.dumps({
-                                'message': 'Trading completed - No reverse trade'
+                                'message': 'Trading completed - No reverse trade',
+                                'user_id': user_state.user_id,
+                                'account_name': user_state.account_name
                             }))
                             
                     else:
-                        # RESET sell flag if order failed
-                        self.sell_order_placed = False
+                        # Reset sell flag if order failed
+                        user_state.sell_order_placed = False
                         error_msg = order_details.get('status_message', 'Unknown error') if order_details else 'Order not completed'
                         self.log_order_event(
-                            self.account_name,
+                            user_state.account_name,
                             "❌ SELL ORDER FAILED",
                             {
                                 "Error": error_msg
                             }
                         )
                         await self.send(text_data=json.dumps({
-                            'message': 'SELL Order Failed'
+                            'message': 'SELL Order Failed',
+                            'user_id': user_state.user_id,
+                            'account_name': user_state.account_name
                         }))
                         
             except Exception as e:
-                # RESET sell flag on exception
-                self.sell_order_placed = False
-                print(f"❌ Error placing sell order: {str(e)}")
-                await self.send(text_data=json.dumps({'error': f'Sell order error: {str(e)}'}))
+                # Reset sell flag on exception
+                user_state.sell_order_placed = False
+                print(f"❌ Error placing sell order for {user_state.account_name}: {str(e)}")
+                await self.send(text_data=json.dumps({
+                    'error': f'Sell order error: {str(e)}',
+                    'user_id': user_state.user_id,
+                    'account_name': user_state.account_name
+                }))
 
-    async def execute_reverse_trade(self, PnL):
+    async def execute_reverse_trade(self, user_state: UserState, PnL):
         """Execute reverse trade after sell"""
         try:
-            print("🔄 Executing reverse trade...")
+            print(f"🔄 Executing reverse trade for {user_state.account_name}...")
             
-            if not self.reverse_trading_symbol:
-                print("❌ Reverse trading symbol not found")
-                await self.send(text_data=json.dumps({'error': 'Reverse trading symbol not found'}))
+            if not user_state.reverse_trading_symbol:
+                print(f"❌ Reverse trading symbol not found for {user_state.account_name}")
+                await self.send(text_data=json.dumps({
+                    'error': 'Reverse trading symbol not found',
+                    'user_id': user_state.user_id,
+                    'account_name': user_state.account_name
+                }))
                 return
             
-            self.previous_ltp = None
-            self.ltp_at_order = None
-            self.locked_ltp = None
-            self.step_size = None
-            self.buy_token = self.reverse_token
-            self.buy_trading_symbol = self.reverse_trading_symbol
+            user_state.previous_ltp = None
+            user_state.ltp_at_order = None
+            user_state.locked_ltp = None
+            user_state.step_size = None
+            user_state.buy_token = user_state.reverse_token
+            user_state.buy_trading_symbol = user_state.reverse_trading_symbol
             
-            instrument_key = f"NFO:{self.reverse_trading_symbol}"
+            instrument_key = f"NFO:{user_state.reverse_trading_symbol}"
             print(f"🔍 Fetching LTP for: {instrument_key}")
             
             try:
-                quote = self.kite.quote([instrument_key])
+                quote = user_state.kite.quote([instrument_key])
                 print(f"📊 Quote response: {quote}")
                 
                 if instrument_key in quote:
                     instrument_data = quote[instrument_key]
                     rest_ltp = instrument_data.get('last_price')
                     if rest_ltp:
-                        self.ltp_at_order = rest_ltp
-                        print(f"✅ LTP fetched successfully: {self.ltp_at_order}")
+                        user_state.ltp_at_order = rest_ltp
+                        print(f"✅ LTP fetched successfully: {user_state.ltp_at_order}")
                     else:
                         print("❌ Last price not found in quote data")
-                        await self.send(text_data=json.dumps({'error': 'Last price not found in quote data'}))
+                        await self.send(text_data=json.dumps({
+                            'error': 'Last price not found in quote data',
+                            'user_id': user_state.user_id,
+                            'account_name': user_state.account_name
+                        }))
                         return
                 else:
                     print(f"❌ Instrument {instrument_key} not found in quote response")
-                    await self.send(text_data=json.dumps({'error': f'Instrument {instrument_key} not found in quote'}))
+                    await self.send(text_data=json.dumps({
+                        'error': f'Instrument {instrument_key} not found in quote',
+                        'user_id': user_state.user_id,
+                        'account_name': user_state.account_name
+                    }))
                     return
                     
             except Exception as e:
-                print(f"❌ Error fetching quote: {str(e)}")
-                await self.send(text_data=json.dumps({'error': f'Quote fetch error: {str(e)}'}))
+                print(f"❌ Error fetching quote for {user_state.account_name}: {str(e)}")
+                await self.send(text_data=json.dumps({
+                    'error': f'Quote fetch error: {str(e)}',
+                    'user_id': user_state.user_id,
+                    'account_name': user_state.account_name
+                }))
                 return
 
-            investable_amount = float(self.investable_amount)
+            investable_amount = float(user_state.investable_amount)
             if PnL > 0:
                 new_investable = investable_amount + (PnL / 100) * investable_amount
             else:
                 new_investable = investable_amount - (abs(PnL) / 100) * investable_amount
             
-            print(f'💰 New investable amount: {new_investable}')
-            print(f'📊 Current LTP: {self.ltp_at_order}')
+            print(f'💰 New investable amount for {user_state.account_name}: {new_investable}')
+            print(f'📊 Current LTP: {user_state.ltp_at_order}')
             
-            self.rq = self.lot * (new_investable // (self.ltp_at_order * self.lot))
-            quantity = int(self.rq)
-            print(f'📦 Reverse trade quantity: {quantity}')
+            user_state.rq = user_state.lot * (new_investable // (user_state.ltp_at_order * user_state.lot))
+            quantity = int(user_state.rq)
+            print(f'📦 Reverse trade quantity for {user_state.account_name}: {quantity}')
             
             if quantity > 0:
-                print(f"🎯 Executing reverse trade with token: {self.reverse_token}, Trading Symbol: {self.reverse_trading_symbol}")
+                print(f"🎯 Executing reverse trade for {user_state.account_name} with token: {user_state.reverse_token}, Trading Symbol: {user_state.reverse_trading_symbol}")
                 
-                new_tokens = [self.reverse_token, self.nifty_token]
+                new_tokens = list(set(self.current_subscribed_tokens + [user_state.reverse_token]))
                 await self.update_subscription(new_tokens)
                 
                 order_id = await self.place_zerodha_order(
-                    transaction_type=self.kite.TRANSACTION_TYPE_BUY,
-                    trading_symbol=self.reverse_trading_symbol,
+                    user_state,
+                    transaction_type=user_state.kite.TRANSACTION_TYPE_BUY,
+                    trading_symbol=user_state.reverse_trading_symbol,
                     quantity=quantity,
-                    order_type=self.kite.ORDER_TYPE_MARKET,
-                    product=self.kite.PRODUCT_NRML,
-                    validity=self.kite.VALIDITY_DAY
+                    order_type=user_state.kite.ORDER_TYPE_MARKET,
+                    product=user_state.kite.PRODUCT_NRML,
+                    validity=user_state.kite.VALIDITY_DAY
                 )
                 
                 if order_id:
-                    await asyncio.sleep(1)  # Increased delay
-                    order_details = await self.fetch_order_status(order_id)
+                    await asyncio.sleep(0.5)  # Reduced delay
+                    order_details = await self.fetch_order_status(user_state, order_id)
                     
                     if order_details and order_details['status'] == 'COMPLETE':
                         price = float(order_details['average_price'])
-                        self.ltp_at_order = price
-                        self.buy_in_ltp = price
-                        self.buy_quantity = quantity
-                        self.reverse_Trade = "OFF"
-                        self.toggle = False
-                        self.investable_amount = new_investable
+                        user_state.ltp_at_order = price
+                        user_state.buy_in_ltp = price
+                        user_state.buy_quantity = quantity
+                        user_state.reverse_Trade = "OFF"
+                        user_state.investable_amount = new_investable
                         
                         # Reset sell flag to continue tracking
-                        self.sell_order_placed = False
-                        self.locked_ltp = None
-                        self.previous_ltp = None
+                        user_state.sell_order_placed = False
+                        user_state.locked_ltp = None
+                        user_state.previous_ltp = None
                         
                         self.log_order_event(
-                            self.account_name,
+                            user_state.account_name,
                             "✅ Reverse Buy Order Placed",
                             {
-                                'Token_Purchase': self.reverse_token,
-                                'Trading_Symbol': self.reverse_trading_symbol,
+                                'Token_Purchase': user_state.reverse_token,
+                                'Trading_Symbol': user_state.reverse_trading_symbol,
                                 'Market Value': self.latest_spot_price,
                                 'Quantity': quantity,
                                 'BUY LTP': price,
-                                "Total Amount": self.total_amount,
+                                "Total Amount": user_state.total_amount,
                                 "Investable Amount": new_investable,
                                 "Time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                             }
@@ -958,6 +1250,8 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                         
                         await self.send(text_data=json.dumps({
                             'message': 'Reverse Order placed successfully...Waiting for square off',
+                            'user_id': user_state.user_id,
+                            'account_name': user_state.account_name,
                             'BUY_LTP': price,
                             'reverse_trade': True
                         }))
@@ -965,21 +1259,29 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                     else:
                         error_msg = order_details.get('status_message', 'Unknown error') if order_details else 'Order not completed'
                         self.log_order_event(
-                            self.account_name,
+                            user_state.account_name,
                             "❌ REVERSE BUY ORDER FAILED",
                             {
                                 "Error": error_msg
                             }
                         )
                         await self.send(text_data=json.dumps({
-                            'message': 'Reverse Order Failed'
+                            'message': 'Reverse Order Failed',
+                            'user_id': user_state.user_id,
+                            'account_name': user_state.account_name
                         }))
             else:
-                print("❌ Invalid quantity for reverse trade")
+                print(f"❌ Invalid quantity for reverse trade for {user_state.account_name}")
                 await self.send(text_data=json.dumps({
-                    'message': 'Reverse trade skipped - invalid quantity'
+                    'message': 'Reverse trade skipped - invalid quantity',
+                    'user_id': user_state.user_id,
+                    'account_name': user_state.account_name
                 }))
                 
         except Exception as e:
-            print(f"❌ Error in reverse trade: {str(e)}")
-            await self.send(text_data=json.dumps({'error': f'Reverse trade error: {str(e)}'}))
+            print(f"❌ Error in reverse trade for {user_state.account_name}: {str(e)}")
+            await self.send(text_data=json.dumps({
+                'error': f'Reverse trade error: {str(e)}',
+                'user_id': user_state.user_id,
+                'account_name': user_state.account_name
+            }))

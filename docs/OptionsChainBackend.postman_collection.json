@@ -1,0 +1,826 @@
+{
+	"info": {
+		"_postman_id": "options-chain-backend-collection",
+		"name": "Options Chain Backend API",
+		"description": "Complete API collection for Options Chain Backend - Django REST Framework",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{
+				"key": "token",
+				"value": "{{access_token}}",
+				"type": "string"
+			}
+		]
+	},
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8000",
+			"type": "string"
+		},
+		{
+			"key": "access_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "refresh_token",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "Register",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"user@example.com\",\n    \"password\": \"SecurePassword123!\",\n    \"confirm_password\": \"SecurePassword123!\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/register/",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "register", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    if (jsonData.success && jsonData.data) {",
+									"        pm.collectionVariables.set('access_token', jsonData.data.access);",
+									"        pm.collectionVariables.set('refresh_token', jsonData.data.refresh);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"user@example.com\",\n    \"password\": \"SecurePassword123!\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/login/",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "login", ""]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Copy Trading - Options",
+			"item": [
+				{
+					"name": "Get Option Chain",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer YOUR_UPSTOX_ACCESS_TOKEN",
+								"description": "Upstox API access token"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"instrument_key\": \"NSE_INDEX|Nifty 50\",\n    \"expiry_date\": \"2024-12-26\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/optiondata/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "optiondata", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Quote",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"api_key\": \"YOUR_ZERODHA_API_KEY\",\n    \"access_token\": \"YOUR_ZERODHA_ACCESS_TOKEN\",\n    \"instrument_key\": \"NSE|RELIANCE\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/get-quote/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "get-quote", ""]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Copy Trading - Upstox Funds",
+			"item": [
+				{
+					"name": "Get Upstox Funds (Multi Account from CSV)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/upstox/trading-balances/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "upstox", "trading-balances", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Upstox Margin",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/upstox/funds/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "upstox", "funds", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Upstox Funds (with Bearer Token)",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer YOUR_UPSTOX_ACCESS_TOKEN"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/upstoxx/fundss/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "upstoxx", "fundss", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List/Create Upstox Funds",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/upstoxfunds/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "upstoxfunds", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Upstox Fund",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Account Name\",\n    \"access_token\": \"YOUR_ACCESS_TOKEN\",\n    \"funds\": {}\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/upstoxfunds/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "upstoxfunds", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get/Update/Delete Upstox Fund",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/upstoxfunds/:pk/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "upstoxfunds", ":pk", ""],
+							"variable": [
+								{
+									"key": "pk",
+									"value": "1"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get All Upstox Funds",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/upstox/all/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "upstox", "all", ""]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Copy Trading - Instruments",
+			"item": [
+				{
+					"name": "Upload Instrument CSV",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/upload-csv/",
+							"host": ["{{base_url}}"],
+							"path": ["upload-csv", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Fund Instrument",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"token\": \"123456\",\n    \"api_key\": \"YOUR_API_KEY\",\n    \"zerodha_token\": \"YOUR_ZERODHA_TOKEN\",\n    \"type\": \"UPSTOX\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/fund-instrument/",
+							"host": ["{{base_url}}"],
+							"path": ["fund-instrument", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Fund Instruments",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/fund-instrument/",
+							"host": ["{{base_url}}"],
+							"path": ["fund-instrument", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Fund Instrument",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"token\": \"123456\",\n    \"api_key\": \"UPDATED_API_KEY\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/fund-instrument/:pk/",
+							"host": ["{{base_url}}"],
+							"path": ["fund-instrument", ":pk", ""],
+							"variable": [
+								{
+									"key": "pk",
+									"value": "1"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Fund Instrument",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/fund-instrument/:pk/",
+							"host": ["{{base_url}}"],
+							"path": ["fund-instrument", ":pk", ""],
+							"variable": [
+								{
+									"key": "pk",
+									"value": "1"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete All Fund Instruments",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/fund-instruments/delete-all/",
+							"host": ["{{base_url}}"],
+							"path": ["fund-instruments", "delete-all", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Trading Symbol",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"token\": \"123456\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/get-tradingsymbol/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "get-tradingsymbol", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Trading Symbols CSV",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"tokens\": [\"123456\", \"789012\"]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/get-tradingsymbolcsv/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "get-tradingsymbolcsv", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Upload NSE CSV",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/upload-nse-csv/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "upload-nse-csv", ""]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Copy Trading - Zerodha",
+			"item": [
+				{
+					"name": "List/Create Zerodha Instrument",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/zerodha-instrument/",
+							"host": ["{{base_url}}"],
+							"path": ["zerodha-instrument", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Zerodha Instrument",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"api_key\": \"YOUR_ZERODHA_API_KEY\",\n    \"token\": \"123456\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/zerodha-instrument/",
+							"host": ["{{base_url}}"],
+							"path": ["zerodha-instrument", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get/Update/Delete Zerodha Instrument",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/zerodha-instrument/:pk/",
+							"host": ["{{base_url}}"],
+							"path": ["zerodha-instrument", ":pk", ""],
+							"variable": [
+								{
+									"key": "pk",
+									"value": "1"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Zerodha Funds",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/zerodha/funds/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "zerodha", "funds", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Zerodha Funds (POST)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"api_key\": \"YOUR_ZERODHA_API_KEY\",\n    \"access_token\": \"YOUR_ZERODHA_ACCESS_TOKEN\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/zerodha/funds/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "zerodha", "funds", ""]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Copy Trading - Logs",
+			"item": [
+				{
+					"name": "Download Log File",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/download-log/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "download-log", ""]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Manual Trade - Upstox",
+			"item": [
+				{
+					"name": "Get Trading Symbols and Token",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"trading_symbol\": \"RELIANCE\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/ManualTrade/gettoken/",
+							"host": ["{{base_url}}"],
+							"path": ["ManualTrade", "gettoken", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Place Upstox Buy Order",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"quantity\": 1,\n    \"instrument_token\": \"123456\",\n    \"access_token\": \"YOUR_UPSTOX_ACCESS_TOKEN\",\n    \"total_amount\": 1000.0,\n    \"investable_amount\": 5000.0\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/ManualTrade/api/place-upstox-order-buy/",
+							"host": ["{{base_url}}"],
+							"path": ["ManualTrade", "api", "place-upstox-order-buy", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Place Upstox Sell Order",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"quantity\": 1,\n    \"instrument_token\": \"123456\",\n    \"access_token\": \"YOUR_UPSTOX_ACCESS_TOKEN\",\n    \"total_amount\": 1000.0,\n    \"investable_amount\": 5000.0\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/ManualTrade/api/place-upstox-order-sell/",
+							"host": ["{{base_url}}"],
+							"path": ["ManualTrade", "api", "place-upstox-order-sell", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Place Upstox Buy Order (Testing)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"quantity\": 1,\n    \"instrument_token\": \"123456\",\n    \"access_token\": \"YOUR_UPSTOX_ACCESS_TOKEN\",\n    \"total_amount\": 1000.0,\n    \"investable_amount\": 5000.0\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/ManualTrade/api/place-upstox-order-buy/testing/",
+							"host": ["{{base_url}}"],
+							"path": ["ManualTrade", "api", "place-upstox-order-buy", "testing", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Place Upstox Sell Order (Testing)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"quantity\": 1,\n    \"instrument_token\": \"123456\",\n    \"access_token\": \"YOUR_UPSTOX_ACCESS_TOKEN\",\n    \"total_amount\": 1000.0,\n    \"investable_amount\": 5000.0\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/ManualTrade/api/place-upstox-order-sell/testing/",
+							"host": ["{{base_url}}"],
+							"path": ["ManualTrade", "api", "place-upstox-order-sell", "testing", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Download Upstox Log",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/ManualTrade/download-log/",
+							"host": ["{{base_url}}"],
+							"path": ["ManualTrade", "download-log", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Download Upstox Logs CSV",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/ManualTrade/download-logs/",
+							"host": ["{{base_url}}"],
+							"path": ["ManualTrade", "download-logs", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Log",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/ManualTrade/log/",
+							"host": ["{{base_url}}"],
+							"path": ["ManualTrade", "log", ""]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Manual Trade - Zerodha",
+			"item": [
+				{
+					"name": "Get Zerodha Trading Symbols and Token",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"trading_symbol\": \"RELIANCE\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/ManualTrade/zerodha/get_tokens/",
+							"host": ["{{base_url}}"],
+							"path": ["ManualTrade", "zerodha", "get_tokens", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Place Zerodha Buy Order",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"api_key\": \"YOUR_ZERODHA_API_KEY\",\n    \"access_token\": \"YOUR_ZERODHA_ACCESS_TOKEN\",\n    \"trading_symbol\": \"RELIANCE\",\n    \"quantity\": 1,\n    \"product\": \"MIS\",\n    \"order_type\": \"MARKET\",\n    \"transaction_type\": \"BUY\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/ManualTrade/zerodha/buy/",
+							"host": ["{{base_url}}"],
+							"path": ["ManualTrade", "zerodha", "buy", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Place Zerodha Sell Order",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"api_key\": \"YOUR_ZERODHA_API_KEY\",\n    \"access_token\": \"YOUR_ZERODHA_ACCESS_TOKEN\",\n    \"trading_symbol\": \"RELIANCE\",\n    \"quantity\": 1,\n    \"product\": \"MIS\",\n    \"order_type\": \"MARKET\",\n    \"transaction_type\": \"SELL\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/ManualTrade/zerodha/sell/",
+							"host": ["{{base_url}}"],
+							"path": ["ManualTrade", "zerodha", "sell", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Download Zerodha Log",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/ManualTrade/download-log-zerodha/",
+							"host": ["{{base_url}}"],
+							"path": ["ManualTrade", "download-log-zerodha", ""]
+						}
+					},
+					"response": []
+				}
+			]
+		}
+	]
+}
+
