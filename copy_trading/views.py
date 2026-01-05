@@ -247,7 +247,7 @@ class FundInstrumentView(APIView):
     def post(self, request):
         data = request.data.copy()
         data['user'] = request.user.id
-        serializer = FundInstrumentSerializer(data=data)
+        serializer = FundInstrumentSerializer(data=data, context={'request': request})
         if serializer.is_valid():
             serializer.save()
             return Response({'message': 'FundInstrument created successfully', 'data': serializer.data}, status=status.HTTP_201_CREATED)
@@ -255,7 +255,7 @@ class FundInstrumentView(APIView):
 
     def patch(self, request, pk):
         instance = get_object_or_404(FundInstrument, pk=pk,user=request.user)
-        serializer = FundInstrumentSerializer(instance, data=request.data, partial=True)
+        serializer = FundInstrumentSerializer(instance, data=request.data, partial=True, context={'request': request})
         if serializer.is_valid():
             serializer.save()
             return Response({'message': 'FundInstrument updated successfully', 'data': serializer.data}, status=status.HTTP_200_OK)

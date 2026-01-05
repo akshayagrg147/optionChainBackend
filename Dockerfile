@@ -24,11 +24,13 @@ RUN pip install --no-cache-dir "autobahn>=22.4.2" && \
     pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir --no-deps "kiteconnect==5.0.1"
 
+# Copy entrypoint script first and fix line endings
+COPY entrypoint.sh /entrypoint.sh
+RUN sed -i 's/\r$//' /entrypoint.sh && \
+    chmod +x /entrypoint.sh
+
 # Copy project
 COPY . /app/
-
-# Make entrypoint script executable
-RUN chmod +x /app/entrypoint.sh
 
 # Create media directory
 RUN mkdir -p /app/media
@@ -36,6 +38,6 @@ RUN mkdir -p /app/media
 # Expose port
 EXPOSE 8000
 
-# Run entrypoint script
-ENTRYPOINT ["/app/entrypoint.sh"]
+# Run entrypoint script (use /entrypoint.sh which won't be overwritten by volume mount)
+ENTRYPOINT ["/entrypoint.sh"]
 

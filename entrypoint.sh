@@ -1,11 +1,29 @@
 #!/bin/bash
 
+# Get Redis host and port from environment variables, with defaults
+REDIS_HOST=${REDIS_HOST:-db}
+REDIS_PORT=${REDIS_PORT:-6379}
+
 # Wait for database/redis to be ready
-echo "Waiting for Redis..."
-while ! nc -z db 6379; do
-  sleep 0.1
+echo "Waiting for Redis at ${REDIS_HOST}:${REDIS_PORT}..."
+MAX_ATTEMPTS=60
+ATTEMPT=0
+
+while ! nc -z "${REDIS_HOST}" "${REDIS_PORT}" 2>/dev/null; do
+  ATTEMPT=$((ATTEMPT + 1))
+  if [ $ATTEMPT -ge $MAX_ATTEMPTS ]; then
+    echo "Warning: Could not connect to Redis at ${REDIS_HOST}:${REDIS_PORT} after ${MAX_ATTEMPTS} attempts."
+    echo "Continuing anyway - Redis may not be available or may start later."
+    break
+  fi
+  sleep 1
 done
-echo "Redis is ready!"
+
+if nc -z "${REDIS_HOST}" "${REDIS_PORT}" 2>/dev/null; then
+  echo "Redis is ready!"
+else
+  echo "Note: Redis connection check failed, but continuing..."
+fi
 
 # Run migrations
 echo "Running migrations..."
