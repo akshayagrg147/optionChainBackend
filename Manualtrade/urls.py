@@ -13,6 +13,7 @@ urlpatterns = [
             path('zerodha/get_tokens/', GetTradingSymbolsAndTokenZerodha.as_view(), name='zerodha-get-tokens'),
             path('zerodha/buy/', PlaceZerodhaBuyOrderAPIView.as_view(), name='zerodha-buy-order'),
             path('zerodha/sell/', PlaceZerodhaSellOrderAPIView.as_view(), name='zerodha-sell-order'),
+            path('zerodha/place-order/generic/', PlaceGenericZerodhaOrderAPIView.as_view(), name='zerodha-place-order-generic'),
             path('download-log-zerodha/', DownloadUpstoxLogAPIView.as_view(), name='download-log'),
             
            

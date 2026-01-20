@@ -280,6 +280,36 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 # Check first user for simulation flag
                 if users_data and isinstance(users_data[0], dict):
                     self.is_simulation = users_data[0].get('is_simulation', False)
+            
+            elif isinstance(payload, dict) and payload.get('type') == 'EMERGENCY_SQUARE_OFF':
+                print(f"🚨 EMERGENCY SQUARE OFF RECEIVED: {payload}")
+                api_key = payload.get('api_key')
+                access_token = payload.get('access_token')
+                
+                if api_key and access_token:
+                    user_id = self.get_user_id(api_key, access_token)
+                    user_state = self.users.get(user_id)
+                    
+                    if user_state:
+                        if user_state.buy_token:
+                             print(f"🚨 Force closing trade for {user_state.account_name}")
+                             # Use latest spot as proxy for LTP or 0, since it's a market order
+                             await self.place_sell_order(user_state, current_ltp=self.latest_spot_price or 0, force_execution=True)
+                             await self.send(text_data=json.dumps({
+                                'message': 'Emergency Square Off Triggered',
+                                'user_id': user_id,
+                                'account_name': user_state.account_name
+                             }))
+                        else:
+                            print(f"⚠️ No active trade to square off for {user_state.account_name}")
+                            await self.send(text_data=json.dumps({
+                                'message': 'No active trade to square off',
+                                'user_id': user_id
+                            }))
+                    else:
+                        print(f"❌ User not found for emergency square off: {user_id}")
+                return
+
             else:
                 print("❌ Invalid payload format. Expected list of users.")
                 await self.send(text_data=json.dumps({
@@ -862,7 +892,14 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             if not user_state.sell_order_placed and user_state.ltp_at_order is not None:
                 
                 if user_state.locked_ltp is None:
-                    user_state.step_size = round(float(user_state.ltp_at_order) * user_state.step / 100, 2)
+                    raw_step_size = float(user_state.ltp_at_order) * user_state.step / 100
+                    user_state.step_size = round(raw_step_size, 2)
+                    
+                    # Ensure minimum step size of 0.05 (NSE tick size) to prevent infinite loops
+                    if user_state.step_size < 0.05:
+                        print(f"⚠️ Step size calculated as {user_state.step_size} (Raw: {raw_step_size:.4f}) for {user_state.account_name}. Enforcing min tick size 0.05")
+                        user_state.step_size = 0.05
+                        
                     user_state.locked_ltp = round(float(user_state.ltp_at_order) - user_state.step_size, 2)
                     user_state.previous_ltp = float(user_state.ltp_at_order)
                     
@@ -1141,14 +1178,19 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 }))
                 return
             
+            # Clear old position state immediately to prevent ghost tracking
+            user_state.buy_token = None
+            user_state.buy_trading_symbol = None
             user_state.previous_ltp = None
             user_state.ltp_at_order = None
             user_state.locked_ltp = None
             user_state.step_size = None
-            user_state.buy_token = user_state.reverse_token
-            user_state.buy_trading_symbol = user_state.reverse_trading_symbol
             
-            instrument_key = f"NFO:{user_state.reverse_trading_symbol}"
+            # Identify reverse token (but don't set as buy_token yet)
+            reverse_token = user_state.reverse_token
+            reverse_trading_symbol = user_state.reverse_trading_symbol
+            
+            instrument_key = f"NFO:{reverse_trading_symbol}"
             print(f"🔍 Fetching LTP for: {instrument_key}")
             
             try:
@@ -1201,15 +1243,15 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
             print(f'📦 Reverse trade quantity for {user_state.account_name}: {quantity}')
             
             if quantity > 0:
-                print(f"🎯 Executing reverse trade for {user_state.account_name} with token: {user_state.reverse_token}, Trading Symbol: {user_state.reverse_trading_symbol}")
+                print(f"🎯 Executing reverse trade for {user_state.account_name} with token: {reverse_token}, Trading Symbol: {reverse_trading_symbol}")
                 
-                new_tokens = list(set(self.current_subscribed_tokens + [user_state.reverse_token]))
+                new_tokens = list(set(self.current_subscribed_tokens + [reverse_token]))
                 await self.update_subscription(new_tokens)
                 
                 order_id = await self.place_zerodha_order(
                     user_state,
                     transaction_type=user_state.kite.TRANSACTION_TYPE_BUY,
-                    trading_symbol=user_state.reverse_trading_symbol,
+                    trading_symbol=reverse_trading_symbol,
                     quantity=quantity,
                     order_type=user_state.kite.ORDER_TYPE_MARKET,
                     product=user_state.kite.PRODUCT_NRML,
@@ -1222,6 +1264,10 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                     
                     if order_details and order_details['status'] == 'COMPLETE':
                         price = float(order_details['average_price'])
+                        
+                        # Successful Order: Update State
+                        user_state.buy_token = reverse_token
+                        user_state.buy_trading_symbol = reverse_trading_symbol
                         user_state.ltp_at_order = price
                         user_state.buy_in_ltp = price
                         user_state.buy_quantity = quantity
@@ -1233,12 +1279,16 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                         user_state.locked_ltp = None
                         user_state.previous_ltp = None
                         
+                        # Reactivate monitoring flags
+                        user_state.order_placedCE = True
+                        user_state.order_placedPE = True
+                        
                         self.log_order_event(
                             user_state.account_name,
                             "✅ Reverse Buy Order Placed",
                             {
-                                'Token_Purchase': user_state.reverse_token,
-                                'Trading_Symbol': user_state.reverse_trading_symbol,
+                                'Token_Purchase': reverse_token,
+                                'Trading_Symbol': reverse_trading_symbol,
                                 'Market Value': self.latest_spot_price,
                                 'Quantity': quantity,
                                 'BUY LTP': price,
@@ -1257,6 +1307,12 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                         }))
                         
                     else:
+                        # Order failed/rejected: Clean up state to "Flat"
+                        user_state.order_placedCE = False
+                        user_state.order_placedPE = False
+                        user_state.sell_order_placed = False
+                        user_state.buy_token = None
+                        
                         error_msg = order_details.get('status_message', 'Unknown error') if order_details else 'Order not completed'
                         self.log_order_event(
                             user_state.account_name,
@@ -1271,6 +1327,12 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                             'account_name': user_state.account_name
                         }))
             else:
+                # Limit condition: Clean up state to "Flat"
+                user_state.order_placedCE = False
+                user_state.order_placedPE = False
+                user_state.sell_order_placed = False
+                user_state.buy_token = None
+                
                 print(f"❌ Invalid quantity for reverse trade for {user_state.account_name}")
                 await self.send(text_data=json.dumps({
                     'message': 'Reverse trade skipped - invalid quantity',
@@ -1279,6 +1341,12 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 }))
                 
         except Exception as e:
+            # Exception: Clean up state to "Flat"
+            user_state.order_placedCE = False
+            user_state.order_placedPE = False
+            user_state.sell_order_placed = False
+            user_state.buy_token = None
+            
             print(f"❌ Error in reverse trade for {user_state.account_name}: {str(e)}")
             await self.send(text_data=json.dumps({
                 'error': f'Reverse trade error: {str(e)}',

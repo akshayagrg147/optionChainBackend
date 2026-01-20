@@ -1127,3 +1127,52 @@ class DownloadZerodhaLogAPIView(APIView):
             return response
         except Exception as e:
             return Response({"error": f"Failed to download log: {str(e)}"}, status=500)
+
+class PlaceGenericZerodhaOrderAPIView(APIView):
+    def post(self, request):
+        api_key = request.data.get("api_key")
+        access_token = request.data.get("access_token")
+        
+        # Order params
+        tradingsymbol = request.data.get("tradingsymbol")
+        exchange = request.data.get("exchange")
+        transaction_type = request.data.get("transaction_type")
+        order_type = request.data.get("order_type")
+        quantity = request.data.get("quantity")
+        product = request.data.get("product")
+        validity = request.data.get("validity")
+        
+        price = request.data.get("price")
+        trigger_price = request.data.get("trigger_price")
+        tag = request.data.get("tag")
+        variety = request.data.get("variety", "regular")
+
+        if not all([api_key, access_token, tradingsymbol, exchange, transaction_type, order_type, quantity, product]):
+             return Response({"status": "error", "message": "Missing required fields"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            kite = KiteConnect(api_key=api_key)
+            kite.set_access_token(access_token)
+            
+            order_id = kite.place_order(
+                variety=variety,
+                exchange=exchange,
+                tradingsymbol=tradingsymbol,
+                transaction_type=transaction_type,
+                quantity=int(quantity),
+                product=product,
+                order_type=order_type,
+                price=float(price) if price and price != "" else None,
+                trigger_price=float(trigger_price) if trigger_price and trigger_price != "" else None,
+                validity=validity,
+                tag=tag
+            )
+            
+            return Response({
+                "status": "success", 
+                "data": {"order_id": order_id}
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            write_log_to_txt2(f"❌ Generic Order Failed: {str(e)}")
+            return Response({"status": "failed", "message": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

@@ -332,6 +332,46 @@ class GetTradingSymbol(APIView):
         if not all([name, expiry, option_type, strike]):
             return Response({"error": "All fields are required"}, status=status.HTTP_400_BAD_REQUEST)
 
+        # ---------------------------------------------------------------------
+        # 1. Try checking nse.csv first (since user mentioned they have CSV)
+        # ---------------------------------------------------------------------
+        csv_path = os.path.join(settings.BASE_DIR, 'nse.csv')
+        if os.path.exists(csv_path):
+            try:
+                with open(csv_path, newline='') as csvfile:
+                    reader = csv.DictReader(csvfile)
+                    for row in reader:
+                        # Ensure we compare similar types/formats
+                        # CSV headers: "name","expiry","option_type","strike", ...
+                        
+                        csv_name = str(row.get("name", "")).strip().upper()
+                        csv_expiry = str(row.get("expiry", "")).strip()
+                        csv_otype = str(row.get("option_type", "")).strip().upper()
+                        
+                        try:
+                            csv_strike = float(row.get("strike", 0))
+                        except ValueError:
+                            csv_strike = 0.0
+
+                        input_name = str(name).strip().upper()
+                        input_expiry = str(expiry).strip()
+                        input_otype = str(option_type).strip().upper()
+                        input_strike = float(strike)
+
+                        if (
+                            csv_name == input_name and
+                            csv_expiry == input_expiry and
+                            csv_otype == input_otype and
+                            csv_strike == input_strike
+                        ):
+                             return Response({"tradingsymbol": row.get("tradingsymbol")}, status=status.HTTP_200_OK)
+            except Exception as e:
+                # If CSV parsing fails, log it or just fall through to JSON
+                print(f"Error reading nse.csv: {e}")
+
+        # ---------------------------------------------------------------------
+        # 2. Fallback to nse.json
+        # ---------------------------------------------------------------------
         json_path = os.path.join(settings.BASE_DIR, 'nse.json')
         try:
             with open(json_path, 'r') as f:
@@ -345,15 +385,15 @@ class GetTradingSymbol(APIView):
                         ):
                         
                         return Response({"tradingsymbol": item.get("trading_symbol")}, status=status.HTTP_200_OK)
-                        
-                        
 
             return Response({"error": "Matching record not found"}, status=status.HTTP_404_NOT_FOUND)
 
         except FileNotFoundError:
-            return Response({"error": "JSON file not found"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            # If both files are missing, then we have a problem
+            error_msg = "Neither nse.csv nor nse.json found." if not os.path.exists(csv_path) else "Record not found (and JSON file missing)."
+            return Response({"error": error_msg}, status=status.HTTP_404_NOT_FOUND)
         except json.JSONDecodeError:
-            return Response({"error": "Invalid JSON format"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({"error": "Invalid JSON format in nse.json"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
 
 class GetTradingSymbolsCSV(APIView):
