@@ -21,17 +21,8 @@ env/
 *.rdb
 dump.rdb
 .DS_Store
-*.csv
 *.txt
 !requirements-docker.txt
-media/
-logs/
-websocket_stream.log
-spot_prices.txt
-trade_log.txt
-upstox_orders.csv
-zerodha.csv
-nse.csv
-nse-Prateek.csv
-zerodha_access_token.txt
-
+# Explicitly include CSV and JSON files (they're needed at runtime)
+!*.csv
+!*.json

@@ -33,7 +33,8 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
         self.order_placedCE = False
         self.order_placedPE = False
         self.ltp_at_order = None
-        self.reverse_trade = None
+        self.reverse_Trade = None
+        self.is_processing_sell = False
         self.toggle = True
         self.buy_token = None
         self.buy_quantity = None
@@ -553,8 +554,13 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 if ((current_ltp <= self.locked_ltp and current_ltp < self.previous_ltp) or 
                     (current_ltp < self.locked_ltp)):
                     
+                    if self.is_processing_sell:
+                        return
+
+                    self.is_processing_sell = True
                     print(f'🚨 Sell condition triggered for token: {self.buy_token}')
                     await self.place_sell_order(current_ltp)
+                    self.is_processing_sell = False
                 
                 self.previous_ltp = current_ltp
                 

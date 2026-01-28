@@ -1327,12 +1327,6 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                             'account_name': user_state.account_name
                         }))
             else:
-                # Limit condition: Clean up state to "Flat"
-                user_state.order_placedCE = False
-                user_state.order_placedPE = False
-                user_state.sell_order_placed = False
-                user_state.buy_token = None
-                
                 print(f"❌ Invalid quantity for reverse trade for {user_state.account_name}")
                 await self.send(text_data=json.dumps({
                     'message': 'Reverse trade skipped - invalid quantity',
@@ -1341,12 +1335,6 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 }))
                 
         except Exception as e:
-            # Exception: Clean up state to "Flat"
-            user_state.order_placedCE = False
-            user_state.order_placedPE = False
-            user_state.sell_order_placed = False
-            user_state.buy_token = None
-            
             print(f"❌ Error in reverse trade for {user_state.account_name}: {str(e)}")
             await self.send(text_data=json.dumps({
                 'error': f'Reverse trade error: {str(e)}',

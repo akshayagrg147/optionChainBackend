@@ -1,10 +1,37 @@
 #!/bin/bash
 
 # Get Redis host and port from environment variables, with defaults
-REDIS_HOST=${REDIS_HOST:-db}
+REDIS_HOST=${REDIS_HOST:-redis}
 REDIS_PORT=${REDIS_PORT:-6379}
 
-# Wait for database/redis to be ready
+# Get PostgreSQL connection details from environment variables
+POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+POSTGRES_PORT=${POSTGRES_PORT:-5432}
+POSTGRES_DB=${POSTGRES_DB:-optionchain_db}
+POSTGRES_USER=${POSTGRES_USER:-postgres}
+
+# Wait for PostgreSQL to be ready
+echo "Waiting for PostgreSQL at ${POSTGRES_HOST}:${POSTGRES_PORT}..."
+MAX_ATTEMPTS=60
+ATTEMPT=0
+
+while ! nc -z "${POSTGRES_HOST}" "${POSTGRES_PORT}" 2>/dev/null; do
+  ATTEMPT=$((ATTEMPT + 1))
+  if [ $ATTEMPT -ge $MAX_ATTEMPTS ]; then
+    echo "Error: Could not connect to PostgreSQL at ${POSTGRES_HOST}:${POSTGRES_PORT} after ${MAX_ATTEMPTS} attempts."
+    exit 1
+  fi
+  sleep 1
+done
+
+if nc -z "${POSTGRES_HOST}" "${POSTGRES_PORT}" 2>/dev/null; then
+  echo "PostgreSQL is ready!"
+else
+  echo "Error: PostgreSQL connection check failed."
+  exit 1
+fi
+
+# Wait for Redis to be ready
 echo "Waiting for Redis at ${REDIS_HOST}:${REDIS_PORT}..."
 MAX_ATTEMPTS=60
 ATTEMPT=0

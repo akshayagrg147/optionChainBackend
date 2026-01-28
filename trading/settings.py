@@ -80,12 +80,35 @@ ASGI_APPLICATION = 'trading.asgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+# Use PostgreSQL if environment variables are set, otherwise fall back to SQLite
+POSTGRES_DB = os.environ.get('POSTGRES_DB')
+POSTGRES_USER = os.environ.get('POSTGRES_USER')
+POSTGRES_PASSWORD = os.environ.get('POSTGRES_PASSWORD')
+POSTGRES_HOST = os.environ.get('POSTGRES_HOST', 'localhost')
+POSTGRES_PORT = os.environ.get('POSTGRES_PORT', '5432')
+
+if all([POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD]):
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': POSTGRES_DB,
+            'USER': POSTGRES_USER,
+            'PASSWORD': POSTGRES_PASSWORD,
+            'HOST': POSTGRES_HOST,
+            'PORT': POSTGRES_PORT,
+            'OPTIONS': {
+                'connect_timeout': 10,
+            },
+        }
     }
-}
+else:
+    # Fallback to SQLite for local development
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
 # Channel layers configuration - use Redis if available, otherwise InMemory
 REDIS_HOST = os.environ.get('REDIS_HOST', '127.0.0.1')
 REDIS_PORT = int(os.environ.get('REDIS_PORT', 6379))

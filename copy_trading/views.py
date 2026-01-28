@@ -335,10 +335,42 @@ class GetTradingSymbol(APIView):
         # ---------------------------------------------------------------------
         # 1. Try checking nse.csv first (since user mentioned they have CSV)
         # ---------------------------------------------------------------------
-        csv_path = os.path.join(settings.BASE_DIR, 'nse.csv')
-        if os.path.exists(csv_path):
+        # Use Path operations directly (BASE_DIR is a Path object)
+        csv_path = settings.BASE_DIR / 'nse.csv'
+        csv_path_str = str(csv_path)
+        
+        # Debug: Log the path and check if file exists
+        print(f"Looking for nse.csv at: {csv_path_str}")
+        print(f"BASE_DIR: {settings.BASE_DIR} (type: {type(settings.BASE_DIR)})")
+        print(f"File exists: {csv_path.exists()}")
+        
+        # Also check alternative locations (using both Path and string methods)
+        alt_paths = [
+            csv_path_str,  # Path-based path as string
+            str(settings.BASE_DIR / 'nse.csv'),  # Using Path operator
+            '/app/nse.csv',  # Absolute path
+        ]
+        
+        csv_found = False
+        actual_csv_path = None
+        
+        # Check Path object first
+        if csv_path.exists():
+            actual_csv_path = csv_path_str
+            csv_found = True
+            print(f"Found nse.csv at: {csv_path_str}")
+        else:
+            # Fallback to checking string paths
+            for path in alt_paths:
+                if os.path.exists(path):
+                    actual_csv_path = path
+                    csv_found = True
+                    print(f"Found nse.csv at: {path}")
+                    break
+        
+        if csv_found and actual_csv_path:
             try:
-                with open(csv_path, newline='') as csvfile:
+                with open(actual_csv_path, newline='') as csvfile:
                     reader = csv.DictReader(csvfile)
                     for row in reader:
                         # Ensure we compare similar types/formats
@@ -367,34 +399,65 @@ class GetTradingSymbol(APIView):
                              return Response({"tradingsymbol": row.get("tradingsymbol")}, status=status.HTTP_200_OK)
             except Exception as e:
                 # If CSV parsing fails, log it or just fall through to JSON
-                print(f"Error reading nse.csv: {e}")
+                print(f"Error reading nse.csv at {actual_csv_path}: {e}")
+                import traceback
+                traceback.print_exc()
+        else:
+            print(f"nse.csv not found in any of these locations: {alt_paths}")
 
         # ---------------------------------------------------------------------
         # 2. Fallback to nse.json
         # ---------------------------------------------------------------------
-        json_path = os.path.join(settings.BASE_DIR, 'nse.json')
-        try:
-            with open(json_path, 'r') as f:
-                data = json.load(f)
-                for item in data:
-                    if (
-                            str(item.get("exchange")).strip().upper() == str(name).strip().upper() and
-                            str(item.get("expiry")) == str(expiry) and
-                            str(item.get("instrument_type")).strip().upper() == str(option_type).strip().upper() and
-                            float(item.get("strike_price")) == float(strike)
-                        ):
-                        
-                        return Response({"tradingsymbol": item.get("trading_symbol")}, status=status.HTTP_200_OK)
-
-            return Response({"error": "Matching record not found"}, status=status.HTTP_404_NOT_FOUND)
-
-        except FileNotFoundError:
-            # If both files are missing, then we have a problem
-            error_msg = "Neither nse.csv nor nse.json found." if not os.path.exists(csv_path) else "Record not found (and JSON file missing)."
-            return Response({"error": error_msg}, status=status.HTTP_404_NOT_FOUND)
-        except json.JSONDecodeError:
-            return Response({"error": "Invalid JSON format in nse.json"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        # Use Path operations directly
+        json_path = settings.BASE_DIR / 'nse.json'
+        json_path_str = str(json_path)
         
+        json_found = False
+        actual_json_path = None
+        
+        # Check Path object first
+        if json_path.exists():
+            actual_json_path = json_path_str
+            json_found = True
+            print(f"Found nse.json at: {json_path_str}")
+        else:
+            # Fallback to checking alternative locations
+            json_alt_paths = [
+                json_path_str,
+                '/app/nse.json',
+            ]
+            for path in json_alt_paths:
+                if os.path.exists(path):
+                    actual_json_path = path
+                    json_found = True
+                    print(f"Found nse.json at: {path}")
+                    break
+        if json_found and actual_json_path:
+            try:
+                with open(actual_json_path, 'r') as f:
+                    data = json.load(f)
+                    for item in data:
+                        if (
+                                str(item.get("exchange")).strip().upper() == str(name).strip().upper() and
+                                str(item.get("expiry")) == str(expiry) and
+                                str(item.get("instrument_type")).strip().upper() == str(option_type).strip().upper() and
+                                float(item.get("strike_price")) == float(strike)
+                            ):
+                            
+                            return Response({"tradingsymbol": item.get("trading_symbol")}, status=status.HTTP_200_OK)
+
+                return Response({"error": "Matching record not found"}, status=status.HTTP_404_NOT_FOUND)
+            except json.JSONDecodeError:
+                return Response({"error": "Invalid JSON format in nse.json"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            except Exception as e:
+                print(f"Error reading nse.json at {actual_json_path}: {e}")
+                import traceback
+                traceback.print_exc()
+                return Response({"error": f"Error reading nse.json: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        else:
+            # If both files are missing, then we have a problem
+            error_msg = "Neither nse.csv nor nse.json found." if not csv_found else "Record not found (and JSON file missing)."
+            return Response({"error": error_msg}, status=status.HTTP_404_NOT_FOUND)
 
 class GetTradingSymbolsCSV(APIView):
     def post(self, request):

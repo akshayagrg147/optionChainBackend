@@ -1,6 +1,7 @@
 import os
 import json
 import asyncio
+import time
 from datetime import datetime
 from channels.generic.websocket import AsyncWebsocketConsumer
 import logging
@@ -8,14 +9,16 @@ import traceback
 from typing import Dict, Optional, Any
 from channels.db import database_sync_to_async
 import uuid
+import threading
 
 # Conditional imports for simulation mode
 try:
-    from kiteconnect import KiteConnect
+    from kiteconnect import KiteConnect, KiteTicker
     REAL_KITE_AVAILABLE = True
 except ImportError:
     REAL_KITE_AVAILABLE = False
     KiteConnect = None
+    KiteTicker = None
 
 # Import hybrid wrapper
 from .hybrid_kite import HybridKiteConnect
@@ -48,6 +51,10 @@ class ManualZerodhaTradeConsumer(AsyncWebsocketConsumer):
         self.reconnect_attempts = 0
         self.max_reconnect_attempts = 5
         self.reconnect_delay = 3  # seconds
+        # Market data subscription tracking
+        self.market_data_subscriptions: Dict[str, Dict[str, Any]] = {}  # connection_id -> subscription_data
+        self.kws_instances: Dict[str, Any] = {}  # connection_id -> KiteTicker instance
+        self.positions: Dict[str, Dict[str, Any]] = {}  # connection_id -> positions (CE/PE bought at prices)
         
     @database_sync_to_async
     def get_django_user(self, api_key):
@@ -121,6 +128,28 @@ class ManualZerodhaTradeConsumer(AsyncWebsocketConsumer):
         self.keep_running = False
         logger.info(f"🔌 Manual Trade WebSocket connection closed (code: {close_code})")
         
+        # Clean up market data subscriptions
+        connection_id = id(self)
+        if connection_id in self.kws_instances:
+            try:
+                kws = self.kws_instances[connection_id]
+                # Set keep_running to False to stop processing ticks
+                if hasattr(self, '_last_tick_time') and connection_id in self._last_tick_time:
+                    del self._last_tick_time[connection_id]
+                kws.close()
+                logger.info(f"✅ Closed KiteTicker for connection {connection_id}")
+            except Exception as e:
+                logger.error(f"Error closing KiteTicker: {e}", exc_info=True)
+            finally:
+                if connection_id in self.kws_instances:
+                    del self.kws_instances[connection_id]
+        
+        if connection_id in self.market_data_subscriptions:
+            del self.market_data_subscriptions[connection_id]
+        
+        if connection_id in self.positions:
+            del self.positions[connection_id]
+        
         # Clean up user sessions
         for user_id in list(self.users.keys()):
             user_data = self.users[user_id]
@@ -144,6 +173,8 @@ class ManualZerodhaTradeConsumer(AsyncWebsocketConsumer):
             
             if message_type == 'order':
                 await self.handle_order_message(payload)
+            elif message_type == 'subscribe_market_data':
+                await self.handle_subscribe_market_data(payload)
             elif message_type == 'ping':
                 await self.send(text_data=json.dumps({'type': 'pong'}))
             else:
@@ -268,6 +299,31 @@ class ManualZerodhaTradeConsumer(AsyncWebsocketConsumer):
                 investable_amount=investable_amount
             )
             
+            # Update position if order was successful
+            if order_result.get('status') == 'success' and order_result.get('average_price'):
+                connection_id = id(self)
+                # Determine option type from symbol (CE or PE)
+                option_type = 'CE' if 'CE' in tradingsymbol.upper() else 'PE' if 'PE' in tradingsymbol.upper() else None
+                
+                if option_type and connection_id in self.positions:
+                    current_pos = self.positions[connection_id][option_type]
+                    if transaction_type == 'BUY':
+                        # Update bought_at as weighted average if position exists
+                        if current_pos['bought_at'] and current_pos['quantity'] > 0:
+                            total_cost = (current_pos['bought_at'] * current_pos['quantity']) + (order_result['average_price'] * int(quantity))
+                            total_quantity = current_pos['quantity'] + int(quantity)
+                            current_pos['bought_at'] = total_cost / total_quantity
+                            current_pos['quantity'] = total_quantity
+                        else:
+                            current_pos['bought_at'] = order_result['average_price']
+                            current_pos['quantity'] = int(quantity)
+                    elif transaction_type == 'SELL':
+                        # Reduce position
+                        if current_pos['quantity'] > 0:
+                            current_pos['quantity'] = max(0, current_pos['quantity'] - int(quantity))
+                            if current_pos['quantity'] == 0:
+                                current_pos['bought_at'] = None
+            
             # Send result
             await self.send(text_data=json.dumps(order_result))
             
@@ -366,3 +422,334 @@ class ManualZerodhaTradeConsumer(AsyncWebsocketConsumer):
                 'message': f'Order placement failed: {error_msg}',
                 'error': error_msg
             }
+
+    async def handle_subscribe_market_data(self, payload):
+        """Handle market data subscription request"""
+        try:
+            api_key = payload.get('api_key')
+            access_token = payload.get('access_token')
+            ce_symbol = payload.get('ce_symbol')  # Call option symbol
+            pe_symbol = payload.get('pe_symbol')  # Put option symbol
+            
+            if not all([api_key, access_token]):
+                await self.send(text_data=json.dumps({
+                    'type': 'error',
+                    'message': 'Missing required fields: api_key, access_token'
+                }))
+                return
+            
+            connection_id = id(self)
+            
+            # Initialize KiteConnect to get instrument tokens
+            if not REAL_KITE_AVAILABLE:
+                await self.send(text_data=json.dumps({
+                    'type': 'error',
+                    'message': 'KiteConnect library not available'
+                }))
+                return
+            
+            kite = KiteConnect(api_key=api_key)
+            kite.set_access_token(access_token)
+            
+            # Get instrument tokens for CE and PE
+            tokens_to_subscribe = []
+            symbol_to_token = {}
+            
+            if ce_symbol:
+                ce_token = await asyncio.to_thread(self.get_instrument_token, kite, ce_symbol)
+                if ce_token:
+                    tokens_to_subscribe.append(ce_token)
+                    symbol_to_token[ce_symbol] = ce_token
+                    logger.info(f"✅ CE Symbol: {ce_symbol}, Token: {ce_token}")
+                else:
+                    logger.warning(f"⚠️ Could not find instrument token for CE symbol: {ce_symbol}")
+            
+            if pe_symbol:
+                pe_token = await asyncio.to_thread(self.get_instrument_token, kite, pe_symbol)
+                if pe_token:
+                    tokens_to_subscribe.append(pe_token)
+                    symbol_to_token[pe_symbol] = pe_token
+                    logger.info(f"✅ PE Symbol: {pe_symbol}, Token: {pe_token}")
+                else:
+                    logger.warning(f"⚠️ Could not find instrument token for PE symbol: {pe_symbol}")
+            
+            if not tokens_to_subscribe:
+                await self.send(text_data=json.dumps({
+                    'type': 'error',
+                    'message': 'No valid symbols provided for subscription'
+                }))
+                return
+            
+            # Store subscription data
+            self.market_data_subscriptions[connection_id] = {
+                'api_key': api_key,
+                'access_token': access_token,
+                'ce_symbol': ce_symbol,
+                'pe_symbol': pe_symbol,
+                'symbol_to_token': symbol_to_token,
+                'tokens': tokens_to_subscribe
+            }
+            
+            # Initialize positions tracking
+            if connection_id not in self.positions:
+                self.positions[connection_id] = {
+                    'CE': {'bought_at': None, 'quantity': 0},
+                    'PE': {'bought_at': None, 'quantity': 0}
+                }
+            
+            # Start KiteTicker streaming
+            await self.start_market_data_stream(connection_id, api_key, access_token, tokens_to_subscribe, symbol_to_token)
+            
+        except Exception as e:
+            logger.error(f"❌ Error handling market data subscription: {e}")
+            logger.error(traceback.format_exc())
+            await self.send(text_data=json.dumps({
+                'type': 'error',
+                'message': f'Market data subscription failed: {str(e)}'
+            }))
+
+    def get_instrument_token(self, kite, trading_symbol):
+        """Get instrument token for a trading symbol"""
+        try:
+            instruments = kite.instruments("NFO")
+            clean_symbol = trading_symbol.replace(" ", "").upper()
+            
+            for instrument in instruments:
+                if instrument['tradingsymbol'].replace(" ", "").upper() == clean_symbol:
+                    return instrument['instrument_token']
+            
+            logger.error(f"❌ No instrument found for symbol: {trading_symbol}")
+            return None
+        except Exception as e:
+            logger.error(f"❌ Error fetching instrument token: {e}")
+            return None
+
+    async def start_market_data_stream(self, connection_id, api_key, access_token, tokens, symbol_to_token):
+        """Start KiteTicker streaming for market data"""
+        try:
+            if not REAL_KITE_AVAILABLE or KiteTicker is None:
+                await self.send(text_data=json.dumps({
+                    'type': 'error',
+                    'message': 'KiteTicker not available'
+                }))
+                return
+            
+            # Close existing KiteTicker if any
+            if connection_id in self.kws_instances:
+                try:
+                    old_kws = self.kws_instances[connection_id]
+                    old_kws.close()
+                    logger.info(f"🔄 Closed existing KiteTicker for connection {connection_id}")
+                    # Wait a bit for cleanup
+                    await asyncio.sleep(0.5)
+                except Exception as e:
+                    logger.warning(f"⚠️ Error closing existing KiteTicker: {e}")
+                finally:
+                    if connection_id in self.kws_instances:
+                        del self.kws_instances[connection_id]
+            
+            kws = KiteTicker(api_key, access_token)
+            self.kws_instances[connection_id] = kws
+            
+            def safe_send_json(payload):
+                if not self.loop:
+                    logger.warning("⚠️ No event loop available for sending message")
+                    return
+                
+                try:
+                    # Check if connection is still open by checking if we can get the channel layer
+                    fut = asyncio.run_coroutine_threadsafe(
+                        self.send(text_data=json.dumps(payload)), self.loop
+                    )
+                    fut.result(timeout=3)
+                except asyncio.TimeoutError:
+                    logger.warning(f"⚠️ Timeout sending JSON payload: {payload.get('type', 'unknown')}")
+                except RuntimeError as e:
+                    if "Event loop is closed" in str(e):
+                        logger.warning("⚠️ Event loop closed, cannot send message")
+                    else:
+                        logger.error(f"❌ Runtime error sending JSON payload: {e}")
+                except Exception as e:
+                    logger.error(f"❌ Failed to send JSON payload: {e}", exc_info=True)
+                    logger.error(f"Payload was: {payload}")
+            
+            def on_ticks(ws, ticks):
+                try:
+                    if ticks and len(ticks) > 0:
+                        logger.debug(f"📊 Received {len(ticks)} ticks for connection {connection_id}")
+                        asyncio.run_coroutine_threadsafe(
+                            self.process_market_ticks(connection_id, ticks, symbol_to_token), 
+                            self.loop
+                        )
+                    else:
+                        logger.debug("⚠️ Received empty ticks array")
+                except Exception as e:
+                    logger.error(f"❌ Error scheduling process_market_ticks: {e}", exc_info=True)
+            
+            def on_connect(ws, response):
+                logger.info(f"✅ Connected to Zerodha WebSocket for market data")
+                try:
+                    ws.subscribe(tokens)
+                    ws.set_mode(ws.MODE_FULL, tokens)
+                    logger.info(f"✅ Subscribed to {len(tokens)} instruments")
+                    safe_send_json({
+                        'type': 'market_data_subscribed',
+                        'message': f'Subscribed to {len(tokens)} instruments',
+                        'tokens': tokens
+                    })
+                except Exception as e:
+                    logger.error(f"❌ Subscribe failure: {e}")
+                    safe_send_json({
+                        'type': 'error',
+                        'message': f'Subscribe failed: {str(e)}'
+                    })
+            
+            def on_error(ws, code, reason):
+                msg = f"❌ WebSocket Error: {code} - {reason}"
+                logger.error(msg)
+                safe_send_json({
+                    'type': 'error',
+                    'message': msg
+                })
+            
+            def on_close(ws, code, reason):
+                msg = f"🔌 KiteTicker WebSocket Closed: {code} - {reason}"
+                logger.warning(msg)
+                # Don't try to send message on close as the connection might already be closed
+                # The frontend will detect the disconnection through other means
+            
+            def on_reconnect(ws, attempts_count):
+                msg = f"🔁 Reconnecting to WebSocket, attempt {attempts_count}"
+                logger.info(msg)
+                safe_send_json({
+                    'type': 'info',
+                    'message': msg
+                })
+            
+            kws.on_ticks = on_ticks
+            kws.on_connect = on_connect
+            kws.on_error = on_error
+            kws.on_close = on_close
+            kws.on_reconnect = on_reconnect
+            
+            def run_websocket_thread():
+                try:
+                    kws.connect(threaded=True)
+                except Exception as e:
+                    logger.error(f"❌ WebSocket thread connect exception: {e}")
+                    try:
+                        kws.connect(threaded=False)
+                    except Exception as e2:
+                        logger.error(f"❌ Fallback connect failed: {e2}")
+                        safe_send_json({
+                            'type': 'error',
+                            'message': f'WS connect failed: {str(e)} / {str(e2)}'
+                        })
+            
+            ws_thread = threading.Thread(target=run_websocket_thread, name=f"KiteTickerThread-{connection_id}")
+            ws_thread.daemon = True
+            ws_thread.start()
+            
+        except Exception as e:
+            logger.error(f"❌ Error starting market data stream: {e}")
+            logger.error(traceback.format_exc())
+            await self.send(text_data=json.dumps({
+                'type': 'error',
+                'message': f'Failed to start market data stream: {str(e)}'
+            }))
+
+    async def process_market_ticks(self, connection_id, ticks, symbol_to_token):
+        """Process market data ticks and send updates to frontend"""
+        try:
+            if not ticks or len(ticks) == 0:
+                return
+                
+            timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+            token_to_symbol = {v: k for k, v in symbol_to_token.items()}
+            
+            positions = self.positions.get(connection_id, {
+                'CE': {'bought_at': None, 'quantity': 0},
+                'PE': {'bought_at': None, 'quantity': 0}
+            })
+            
+            # Rate limiting: only process ticks every 200ms to avoid overwhelming the connection
+            current_time = time.time()
+            if not hasattr(self, '_last_tick_time'):
+                self._last_tick_time = {}
+            if connection_id not in self._last_tick_time:
+                self._last_tick_time[connection_id] = 0
+            
+            if current_time - self._last_tick_time[connection_id] < 0.2:  # 200ms throttle
+                return
+            
+            self._last_tick_time[connection_id] = current_time
+            logger.debug(f"📊 Processing {len(ticks)} ticks for connection {connection_id}")
+            
+            for tick in ticks:
+                instrument_token = tick.get('instrument_token')
+                ltp = tick.get('last_price', 0)
+                
+                if instrument_token in token_to_symbol:
+                    symbol = token_to_symbol[instrument_token]
+                    # Determine option type from symbol (CE or PE)
+                    option_type = 'CE' if 'CE' in symbol.upper() else 'PE' if 'PE' in symbol.upper() else None
+                    
+                    if not option_type:
+                        continue
+                    
+                    # Calculate PNL if position exists
+                    pnl = None
+                    pnl_percent = None
+                    if positions[option_type]['bought_at'] and positions[option_type]['quantity'] > 0:
+                        bought_at = positions[option_type]['bought_at']
+                        quantity = positions[option_type]['quantity']
+                        pnl = (ltp - bought_at) * quantity
+                        pnl_percent = ((ltp - bought_at) / bought_at * 100) if bought_at > 0 else 0
+                    
+                    # Send live LTP update
+                    try:
+                        # Check if connection is still active
+                        if not self.keep_running:
+                            logger.warning("⚠️ Connection closed, skipping LTP update")
+                            break
+                            
+                        message_data = {
+                            'type': 'live_ltp',
+                            'option_type': option_type,
+                            'symbol': symbol,
+                            'ltp': float(ltp) if ltp else 0.0,
+                            'bought_at': float(positions[option_type]['bought_at']) if positions[option_type]['bought_at'] else None,
+                            'quantity': int(positions[option_type]['quantity']) if positions[option_type]['quantity'] else 0,
+                            'pnl': float(pnl) if pnl is not None else None,
+                            'pnl_percent': float(pnl_percent) if pnl_percent is not None else None,
+                            'timestamp': timestamp
+                        }
+                        
+                        await self.send(text_data=json.dumps(message_data))
+                        logger.debug(f"📊 Sent LTP update: {option_type} = {ltp}")
+                    except Exception as send_error:
+                        error_msg = str(send_error)
+                        if "WebSocket is closed" in error_msg or "Connection closed" in error_msg:
+                            logger.warning(f"⚠️ WebSocket closed, stopping tick processing")
+                            self.keep_running = False
+                            break
+                        else:
+                            logger.error(f"❌ Error sending LTP update: {send_error}", exc_info=True)
+                        # Don't break the loop, continue processing other ticks
+                        continue
+                    
+        except Exception as e:
+            logger.error(f"❌ Error processing market ticks: {e}")
+            logger.error(traceback.format_exc())
+
+    def update_position(self, connection_id, option_type, bought_at, quantity):
+        """Update position when order is placed"""
+        if connection_id not in self.positions:
+            self.positions[connection_id] = {
+                'CE': {'bought_at': None, 'quantity': 0},
+                'PE': {'bought_at': None, 'quantity': 0}
+            }
+        
+        # For now, we'll update this when order is placed successfully
+        # This will be called from handle_order_message when order succeeds
+        pass

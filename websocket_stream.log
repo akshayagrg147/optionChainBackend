@@ -562,3 +562,324 @@ Investable Amount: 0
 P & L percent: -0.66
 Time: 2025-12-24 09:59:15
 ------------------------------------------------------------
+2026-01-13 07:33:51,670 | INFO | 
+==================== KUMAR ANSHUL SINGH | ✅ Buy Order Placed ====================
+Token_Purchase: 11814658
+Trading_Symbol: NIFTY2611325600CE
+Market Value: 25637.2
+Quantity: 65
+BUY LTP: 59.65
+Total Amount: 6110
+Investable Amount: 6110
+Time: 2026-01-13 07:33:51
+------------------------------------------------------------
+2026-01-13 07:33:56,378 | INFO | 
+==================== KUMAR ANSHUL SINGH | ✅ SELL Order Placed ====================
+Token_Purchase: 11814658
+Trading_Symbol: NIFTY2611325600CE
+Market Value: 25640.75
+SELL LTP: 61.35
+Quantity: 65
+Total Amount: 6110
+Investable Amount: 6110
+P & L percent: 2.85
+Time: 2026-01-13 07:33:56
+------------------------------------------------------------
+2026-01-13 07:35:11,924 | INFO | 
+==================== KUMAR ANSHUL SINGH | ✅ Buy Order Placed ====================
+Token_Purchase: 11814658
+Trading_Symbol: NIFTY2611325600CE
+Market Value: 25645.35
+Quantity: 65
+BUY LTP: 62.85
+Total Amount: 6110
+Investable Amount: 6110
+Time: 2026-01-13 07:35:11
+------------------------------------------------------------
+2026-01-13 07:35:15,181 | INFO | 
+==================== KUMAR ANSHUL SINGH | ✅ SELL Order Placed ====================
+Token_Purchase: 11814658
+Trading_Symbol: NIFTY2611325600CE
+Market Value: 25648.2
+SELL LTP: 64.6
+Quantity: 65
+Total Amount: 6110
+Investable Amount: 6110
+P & L percent: 2.78
+Time: 2026-01-13 07:35:15
+------------------------------------------------------------
+2026-01-13 07:35:15,817 | INFO | 
+==================== KUMAR ANSHUL SINGH | ✅ Reverse Buy Order Placed ====================
+Token_Purchase: 11815426
+Trading_Symbol: NIFTY2611325600PE
+Market Value: 25648.0
+Quantity: 325
+BUY LTP: 18.15
+Total Amount: 6110
+Investable Amount: 6279.858
+Time: 2026-01-13 07:35:15
+------------------------------------------------------------
+2026-01-13 07:35:18,925 | INFO | 
+==================== KUMAR ANSHUL SINGH | ✅ SELL Order Placed ====================
+Token_Purchase: 11815426
+Trading_Symbol: NIFTY2611325600PE
+Market Value: 25646.3
+SELL LTP: 19.1
+Quantity: 325
+Total Amount: 6110
+Investable Amount: 6279.858
+P & L percent: 5.23
+Time: 2026-01-13 07:35:18
+------------------------------------------------------------
+2026-01-27 07:41:29,194 | INFO | 
+==================== KUMAR ANSHUL SINGH | ✅ Buy Order Placed ====================
+Token_Purchase: 14999554
+Trading_Symbol: NIFTY26JAN24400PE
+Market Value: 25074.05
+Quantity: 7020
+BUY LTP: 0.6
+Total Amount: 6059.4
+Investable Amount: 6059.4
+Time: 2026-01-27 07:41:29
+------------------------------------------------------------
+2026-01-27 07:41:38,456 | INFO | 
+==================== KUMAR ANSHUL SINGH | ✅ SELL Order Placed ====================
+Token_Purchase: 14999554
+Trading_Symbol: NIFTY26JAN24400PE
+Market Value: 25072.55
+SELL LTP: 0.55
+Quantity: 7020
+Total Amount: 6059.4
+Investable Amount: 6059.4
+P & L percent: -8.33
+Time: 2026-01-27 07:41:38
+------------------------------------------------------------
+2026-01-27 07:41:39,188 | INFO | 
+==================== KUMAR ANSHUL SINGH | ✅ Buy Order Placed ====================
+Token_Purchase: 14999554
+Trading_Symbol: NIFTY26JAN24400PE
+Market Value: 25072.95
+Quantity: 7020
+BUY LTP: 0.6
+Total Amount: 6059.4
+Investable Amount: 6059.4
+Time: 2026-01-27 07:41:39
+------------------------------------------------------------
+2026-01-27 07:41:45,718 | INFO | 
+==================== KUMAR ANSHUL SINGH | ✅ SELL Order Placed ====================
+Token_Purchase: 14999554
+Trading_Symbol: NIFTY26JAN24400PE
+Market Value: 25072.6
+SELL LTP: 0.55
+Quantity: 7020
+Total Amount: 6059.4
+Investable Amount: 6059.4
+P & L percent: -8.33
+Time: 2026-01-27 07:41:45
+------------------------------------------------------------
+2026-01-27 07:41:46,962 | INFO | 
+==================== KUMAR ANSHUL SINGH | ✅ Buy Order Placed ====================
+Token_Purchase: 14999554
+Trading_Symbol: NIFTY26JAN24400PE
+Market Value: 25072.7
+Quantity: 7020
+BUY LTP: 0.6
+Total Amount: 6059.4
+Investable Amount: 6059.4
+Time: 2026-01-27 07:41:46
+------------------------------------------------------------
+2026-01-27 07:41:51,744 | INFO | 
+==================== KUMAR ANSHUL SINGH | ✅ SELL Order Placed ====================
+Token_Purchase: 14999554
+Trading_Symbol: NIFTY26JAN24400PE
+Market Value: 25075.05
+SELL LTP: 0.55
+Quantity: 7020
+Total Amount: 6059.4
+Investable Amount: 6059.4
+P & L percent: -8.33
+Time: 2026-01-27 07:41:51
+------------------------------------------------------------
+2026-01-27 07:41:52,357 | INFO | 
+==================== KUMAR ANSHUL SINGH | ✅ Buy Order Placed ====================
+Token_Purchase: 14999554
+Trading_Symbol: NIFTY26JAN24400PE
+Market Value: 25074.1
+Quantity: 7020
+BUY LTP: 0.6
+Total Amount: 6059.4
+Investable Amount: 6059.4
+Time: 2026-01-27 07:41:52
+------------------------------------------------------------
+2026-01-27 07:41:53,459 | INFO | 
+==================== KUMAR ANSHUL SINGH | ✅ SELL Order Placed ====================
+Token_Purchase: 14999554
+Trading_Symbol: NIFTY26JAN24400PE
+Market Value: 25074.85
+SELL LTP: 0.55
+Quantity: 7020
+Total Amount: 6059.4
+Investable Amount: 6059.4
+P & L percent: -8.33
+Time: 2026-01-27 07:41:53
+------------------------------------------------------------
+2026-01-27 07:41:54,215 | INFO | 
+==================== KUMAR ANSHUL SINGH | ✅ Buy Order Placed ====================
+Token_Purchase: 14999554
+Trading_Symbol: NIFTY26JAN24400PE
+Market Value: 25074.7
+Quantity: 7020
+BUY LTP: 0.55
+Total Amount: 6059.4
+Investable Amount: 6059.4
+Time: 2026-01-27 07:41:54
+------------------------------------------------------------
+2026-01-27 08:39:43,164 | INFO | 
+==================== KUMAR ANSHUL SINGH | ✅ Buy Order Placed ====================
+Token_Purchase: 14999554
+Trading_Symbol: NIFTY26JAN24400PE
+Market Value: 25021.85
+Quantity: 7930
+BUY LTP: 0.5
+Total Amount: 6059.4
+Investable Amount: 6059.4
+Time: 2026-01-27 08:39:43
+------------------------------------------------------------
+2026-01-27 08:40:09,647 | INFO | 
+==================== KUMAR ANSHUL SINGH | ✅ SELL Order Placed ====================
+Token_Purchase: 14999554
+Trading_Symbol: NIFTY26JAN24400PE
+Market Value: 25027.3
+SELL LTP: 0.5
+Quantity: 7930
+Total Amount: 6059.4
+Investable Amount: 6059.4
+P & L percent: 0.0
+Time: 2026-01-27 08:40:09
+------------------------------------------------------------
+2026-01-27 08:40:28,704 | INFO | 
+==================== KUMAR ANSHUL SINGH | ✅ Buy Order Placed ====================
+Token_Purchase: 15033602
+Trading_Symbol: NIFTY26JAN25600CE
+Market Value: 25034.7
+Quantity: 7930
+BUY LTP: 0.8
+Total Amount: 6059.4
+Investable Amount: 6059.4
+Time: 2026-01-27 08:40:28
+------------------------------------------------------------
+2026-01-27 08:40:29,421 | INFO | 
+==================== KUMAR ANSHUL SINGH | ✅ SELL Order Placed ====================
+Token_Purchase: 15033602
+Trading_Symbol: NIFTY26JAN25600CE
+Market Value: 25036.0
+SELL LTP: 0.75
+Quantity: 7930
+Total Amount: 6059.4
+Investable Amount: 6059.4
+P & L percent: -6.25
+Time: 2026-01-27 08:40:29
+------------------------------------------------------------
+2026-01-27 08:40:30,785 | INFO | 
+==================== KUMAR ANSHUL SINGH | ✅ Buy Order Placed ====================
+Token_Purchase: 15033602
+Trading_Symbol: NIFTY26JAN25600CE
+Market Value: 25039.65
+Quantity: 7930
+BUY LTP: 0.8
+Total Amount: 6059.4
+Investable Amount: 6059.4
+Time: 2026-01-27 08:40:30
+------------------------------------------------------------
+2026-01-27 08:40:32,249 | INFO | 
+==================== KUMAR ANSHUL SINGH | ✅ SELL Order Placed ====================
+Token_Purchase: 15033602
+Trading_Symbol: NIFTY26JAN25600CE
+Market Value: 25039.65
+SELL LTP: 0.8
+Quantity: 7930
+Total Amount: 6059.4
+Investable Amount: 6059.4
+P & L percent: 0.0
+Time: 2026-01-27 08:40:32
+------------------------------------------------------------
+2026-01-27 08:40:33,192 | INFO | 
+==================== KUMAR ANSHUL SINGH | ✅ Buy Order Placed ====================
+Token_Purchase: 15033602
+Trading_Symbol: NIFTY26JAN25600CE
+Market Value: 25040.0
+Quantity: 7930
+BUY LTP: 0.8
+Total Amount: 6059.4
+Investable Amount: 6059.4
+Time: 2026-01-27 08:40:33
+------------------------------------------------------------
+2026-01-27 08:40:34,926 | INFO | 
+==================== KUMAR ANSHUL SINGH | ✅ SELL Order Placed ====================
+Token_Purchase: 15033602
+Trading_Symbol: NIFTY26JAN25600CE
+Market Value: 25040.85
+SELL LTP: 0.75
+Quantity: 7930
+Total Amount: 6059.4
+Investable Amount: 6059.4
+P & L percent: -6.25
+Time: 2026-01-27 08:40:34
+------------------------------------------------------------
+2026-01-27 08:40:37,476 | INFO | 
+==================== KUMAR ANSHUL SINGH | ✅ Buy Order Placed ====================
+Token_Purchase: 15033602
+Trading_Symbol: NIFTY26JAN25600CE
+Market Value: 25039.45
+Quantity: 7930
+BUY LTP: 0.8
+Total Amount: 6059.4
+Investable Amount: 6059.4
+Time: 2026-01-27 08:40:37
+------------------------------------------------------------
+2026-01-27 08:40:40,150 | INFO | 
+==================== KUMAR ANSHUL SINGH | ✅ SELL Order Placed ====================
+Token_Purchase: 15033602
+Trading_Symbol: NIFTY26JAN25600CE
+Market Value: 25039.6
+SELL LTP: 0.75
+Quantity: 7930
+Total Amount: 6059.4
+Investable Amount: 6059.4
+P & L percent: -6.25
+Time: 2026-01-27 08:40:40
+------------------------------------------------------------
+2026-01-27 08:40:40,914 | INFO | 
+==================== KUMAR ANSHUL SINGH | ✅ Buy Order Placed ====================
+Token_Purchase: 15033602
+Trading_Symbol: NIFTY26JAN25600CE
+Market Value: 25040.35
+Quantity: 7930
+BUY LTP: 0.8
+Total Amount: 6059.4
+Investable Amount: 6059.4
+Time: 2026-01-27 08:40:40
+------------------------------------------------------------
+2026-01-27 08:52:30,001 | INFO | 
+==================== KUMAR ANSHUL SINGH | ✅ Buy Order Placed ====================
+Token_Purchase: 15033602
+Trading_Symbol: NIFTY26JAN25600CE
+Market Value: 25031.7
+Quantity: 9945
+BUY LTP: 0.65
+Total Amount: 6059.4
+Investable Amount: 6059.4
+Time: 2026-01-27 08:52:30
+------------------------------------------------------------
+2026-01-27 08:52:34,734 | INFO | 
+==================== KUMAR ANSHUL SINGH | ✅ SELL Order Placed ====================
+Token_Purchase: 15033602
+Trading_Symbol: NIFTY26JAN25600CE
+Market Value: 25030.25
+SELL LTP: 0.6
+Quantity: 9945
+Total Amount: 6059.4
+Investable Amount: 6059.4
+P & L percent: -7.69
+Time: 2026-01-27 08:52:34
+------------------------------------------------------------

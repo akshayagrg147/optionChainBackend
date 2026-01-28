@@ -10,6 +10,7 @@ WORKDIR /app
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     gcc \
+    libpq-dev \
     netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
@@ -34,6 +35,10 @@ COPY . /app/
 
 # Create media directory
 RUN mkdir -p /app/media
+
+# Verify CSV files are present (for debugging)
+RUN ls -la /app/*.csv 2>/dev/null || echo "Warning: No CSV files found in /app"
+RUN ls -la /app/*.json 2>/dev/null || echo "Warning: No JSON files found in /app"
 
 # Expose port
 EXPOSE 8000
