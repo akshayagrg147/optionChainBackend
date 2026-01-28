@@ -430,6 +430,7 @@ class ManualZerodhaTradeConsumer(AsyncWebsocketConsumer):
             access_token = payload.get('access_token')
             ce_symbol = payload.get('ce_symbol')  # Call option symbol
             pe_symbol = payload.get('pe_symbol')  # Put option symbol
+            instrument_name = payload.get('instrument_name')  # Underlying index name (NIFTY, BANKNIFTY, etc.)
             
             if not all([api_key, access_token]):
                 await self.send(text_data=json.dumps({
@@ -454,6 +455,17 @@ class ManualZerodhaTradeConsumer(AsyncWebsocketConsumer):
             # Get instrument tokens for CE and PE
             tokens_to_subscribe = []
             symbol_to_token = {}
+            index_token = None
+            
+            # Get index token if instrument name is provided
+            if instrument_name:
+                index_token = await asyncio.to_thread(self.get_index_token, kite, instrument_name)
+                if index_token:
+                    tokens_to_subscribe.append(index_token)
+                    symbol_to_token[f'INDEX_{instrument_name}'] = index_token
+                    logger.info(f"✅ Index Token for {instrument_name}: {index_token}")
+                else:
+                    logger.warning(f"⚠️ Could not find index token for: {instrument_name}")
             
             if ce_symbol:
                 ce_token = await asyncio.to_thread(self.get_instrument_token, kite, ce_symbol)
@@ -486,6 +498,8 @@ class ManualZerodhaTradeConsumer(AsyncWebsocketConsumer):
                 'access_token': access_token,
                 'ce_symbol': ce_symbol,
                 'pe_symbol': pe_symbol,
+                'instrument_name': instrument_name,
+                'index_token': index_token,
                 'symbol_to_token': symbol_to_token,
                 'tokens': tokens_to_subscribe
             }
@@ -522,6 +536,49 @@ class ManualZerodhaTradeConsumer(AsyncWebsocketConsumer):
             return None
         except Exception as e:
             logger.error(f"❌ Error fetching instrument token: {e}")
+            return None
+
+    def get_index_token(self, kite, instrument_name):
+        """Get index token for underlying index (NIFTY, BANKNIFTY, etc.)"""
+        try:
+            # Map instrument names to their index trading symbols
+            index_map = {
+                "NIFTY": "NIFTY 50",
+                "BANKNIFTY": "NIFTY BANK",
+                "FINNIFTY": "NIFTY FIN SERVICE",
+                "MIDCPNIFTY": "NIFTY MID SELECT",
+                "SENSEX": "SENSEX",
+                "BANKEX": "BANKEX"
+            }
+            
+            # Determine exchange based on instrument
+            nse_indices = ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"]
+            bse_indices = ["SENSEX", "BANKEX"]
+            
+            if instrument_name in nse_indices:
+                exchange = "NSE"
+            elif instrument_name in bse_indices:
+                exchange = "BSE"
+            else:
+                logger.warning(f"⚠️ Unknown instrument: {instrument_name}, defaulting to NSE")
+                exchange = "NSE"
+            
+            instruments = kite.instruments(exchange)
+            index_tradingsymbol = index_map.get(instrument_name)
+            
+            if not index_tradingsymbol:
+                logger.error(f"❌ No mapping found for instrument: {instrument_name}")
+                return None
+            
+            for instrument in instruments:
+                if instrument['tradingsymbol'] == index_tradingsymbol:
+                    logger.info(f"✅ Found {instrument_name} index token: {instrument['instrument_token']}")
+                    return instrument['instrument_token']
+            
+            logger.error(f"❌ No index token found for: {instrument_name} ({index_tradingsymbol})")
+            return None
+        except Exception as e:
+            logger.error(f"❌ Error fetching index token: {e}")
             return None
 
     async def start_market_data_stream(self, connection_id, api_key, access_token, tokens, symbol_to_token):
@@ -672,6 +729,10 @@ class ManualZerodhaTradeConsumer(AsyncWebsocketConsumer):
                 'PE': {'bought_at': None, 'quantity': 0}
             })
             
+            # Get subscription data to access instrument_name
+            subscription_data = self.market_data_subscriptions.get(connection_id, {})
+            instrument_name = subscription_data.get('instrument_name')
+            
             # Rate limiting: only process ticks every 200ms to avoid overwhelming the connection
             current_time = time.time()
             if not hasattr(self, '_last_tick_time'):
@@ -688,55 +749,91 @@ class ManualZerodhaTradeConsumer(AsyncWebsocketConsumer):
             for tick in ticks:
                 instrument_token = tick.get('instrument_token')
                 ltp = tick.get('last_price', 0)
+                volume = tick.get('volume', 0)
+                oi = tick.get('oi', 0)
+                change = tick.get('change', 0)
                 
                 if instrument_token in token_to_symbol:
                     symbol = token_to_symbol[instrument_token]
-                    # Determine option type from symbol (CE or PE)
-                    option_type = 'CE' if 'CE' in symbol.upper() else 'PE' if 'PE' in symbol.upper() else None
                     
-                    if not option_type:
-                        continue
-                    
-                    # Calculate PNL if position exists
-                    pnl = None
-                    pnl_percent = None
-                    if positions[option_type]['bought_at'] and positions[option_type]['quantity'] > 0:
-                        bought_at = positions[option_type]['bought_at']
-                        quantity = positions[option_type]['quantity']
-                        pnl = (ltp - bought_at) * quantity
-                        pnl_percent = ((ltp - bought_at) / bought_at * 100) if bought_at > 0 else 0
-                    
-                    # Send live LTP update
-                    try:
-                        # Check if connection is still active
-                        if not self.keep_running:
-                            logger.warning("⚠️ Connection closed, skipping LTP update")
-                            break
+                    # Check if this is an index token
+                    if symbol.startswith('INDEX_'):
+                        # This is an index update
+                        index_name = symbol.replace('INDEX_', '')
+                        try:
+                            if not self.keep_running:
+                                logger.warning("⚠️ Connection closed, skipping index update")
+                                break
+                                
+                            message_data = {
+                                'type': 'live_index_update',
+                                'instrument_name': index_name,
+                                'spot_price': float(ltp) if ltp else 0.0,
+                                'volume': int(volume) if volume else 0,
+                                'oi': int(oi) if oi else 0,
+                                'change': float(change) if change else 0.0,
+                                'timestamp': timestamp
+                            }
                             
-                        message_data = {
-                            'type': 'live_ltp',
-                            'option_type': option_type,
-                            'symbol': symbol,
-                            'ltp': float(ltp) if ltp else 0.0,
-                            'bought_at': float(positions[option_type]['bought_at']) if positions[option_type]['bought_at'] else None,
-                            'quantity': int(positions[option_type]['quantity']) if positions[option_type]['quantity'] else 0,
-                            'pnl': float(pnl) if pnl is not None else None,
-                            'pnl_percent': float(pnl_percent) if pnl_percent is not None else None,
-                            'timestamp': timestamp
-                        }
+                            await self.send(text_data=json.dumps(message_data))
+                            logger.debug(f"📊 Sent index update: {index_name} = {ltp}")
+                        except Exception as send_error:
+                            error_msg = str(send_error)
+                            if "WebSocket is closed" in error_msg or "Connection closed" in error_msg:
+                                logger.warning(f"⚠️ WebSocket closed, stopping tick processing")
+                                self.keep_running = False
+                                break
+                            else:
+                                logger.error(f"❌ Error sending index update: {send_error}", exc_info=True)
+                            continue
+                    else:
+                        # This is an option update (CE or PE)
+                        # Determine option type from symbol (CE or PE)
+                        option_type = 'CE' if 'CE' in symbol.upper() else 'PE' if 'PE' in symbol.upper() else None
                         
-                        await self.send(text_data=json.dumps(message_data))
-                        logger.debug(f"📊 Sent LTP update: {option_type} = {ltp}")
-                    except Exception as send_error:
-                        error_msg = str(send_error)
-                        if "WebSocket is closed" in error_msg or "Connection closed" in error_msg:
-                            logger.warning(f"⚠️ WebSocket closed, stopping tick processing")
-                            self.keep_running = False
-                            break
-                        else:
-                            logger.error(f"❌ Error sending LTP update: {send_error}", exc_info=True)
-                        # Don't break the loop, continue processing other ticks
-                        continue
+                        if not option_type:
+                            continue
+                        
+                        # Calculate PNL if position exists
+                        pnl = None
+                        pnl_percent = None
+                        if positions[option_type]['bought_at'] and positions[option_type]['quantity'] > 0:
+                            bought_at = positions[option_type]['bought_at']
+                            quantity = positions[option_type]['quantity']
+                            pnl = (ltp - bought_at) * quantity
+                            pnl_percent = ((ltp - bought_at) / bought_at * 100) if bought_at > 0 else 0
+                        
+                        # Send live LTP update
+                        try:
+                            # Check if connection is still active
+                            if not self.keep_running:
+                                logger.warning("⚠️ Connection closed, skipping LTP update")
+                                break
+                                
+                            message_data = {
+                                'type': 'live_ltp',
+                                'option_type': option_type,
+                                'symbol': symbol,
+                                'ltp': float(ltp) if ltp else 0.0,
+                                'bought_at': float(positions[option_type]['bought_at']) if positions[option_type]['bought_at'] else None,
+                                'quantity': int(positions[option_type]['quantity']) if positions[option_type]['quantity'] else 0,
+                                'pnl': float(pnl) if pnl is not None else None,
+                                'pnl_percent': float(pnl_percent) if pnl_percent is not None else None,
+                                'timestamp': timestamp
+                            }
+                            
+                            await self.send(text_data=json.dumps(message_data))
+                            logger.debug(f"📊 Sent LTP update: {option_type} = {ltp}")
+                        except Exception as send_error:
+                            error_msg = str(send_error)
+                            if "WebSocket is closed" in error_msg or "Connection closed" in error_msg:
+                                logger.warning(f"⚠️ WebSocket closed, stopping tick processing")
+                                self.keep_running = False
+                                break
+                            else:
+                                logger.error(f"❌ Error sending LTP update: {send_error}", exc_info=True)
+                            # Don't break the loop, continue processing other ticks
+                            continue
                     
         except Exception as e:
             logger.error(f"❌ Error processing market ticks: {e}")
