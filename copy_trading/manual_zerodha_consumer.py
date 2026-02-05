@@ -511,6 +511,35 @@ class ManualZerodhaTradeConsumer(AsyncWebsocketConsumer):
                     'PE': {'bought_at': None, 'quantity': 0}
                 }
             
+            # Fetch existing positions from Zerodha to sync PnL
+            try:
+                positions_response = await asyncio.to_thread(kite.positions)
+                net_positions = positions_response.get('net', [])
+                
+                logger.info(f"📊 Fetching initial positions for connection {connection_id}")
+                
+                for pos in net_positions:
+                    tsym = pos.get('tradingsymbol')
+                    qty = pos.get('quantity', 0)
+                    avg_price = pos.get('average_price', 0)
+                    
+                    # Check if this position matches our subscribed symbols
+                    if tsym == ce_symbol:
+                        # It's a CE position
+                        self.positions[connection_id]['CE']['quantity'] = qty
+                        self.positions[connection_id]['CE']['bought_at'] = avg_price
+                        logger.info(f"✅ Found existing CE position: {qty} @ {avg_price}")
+                    
+                    elif tsym == pe_symbol:
+                        # It's a PE position
+                        self.positions[connection_id]['PE']['quantity'] = qty
+                        self.positions[connection_id]['PE']['bought_at'] = avg_price
+                        logger.info(f"✅ Found existing PE position: {qty} @ {avg_price}")
+                        
+            except Exception as e:
+                logger.error(f"⚠️ Failed to fetch initial positions: {e}")
+                # Don't fail the whole subscription, just log error
+            
             # Start KiteTicker streaming
             await self.start_market_data_stream(connection_id, api_key, access_token, tokens_to_subscribe, symbol_to_token)
             
@@ -744,7 +773,11 @@ class ManualZerodhaTradeConsumer(AsyncWebsocketConsumer):
                 return
             
             self._last_tick_time[connection_id] = current_time
-            logger.debug(f"📊 Processing {len(ticks)} ticks for connection {connection_id}")
+            logger.debug(f"📊 Processing {len(ticks)} ticks for connection {connection_id}. Time since last: {current_time - (self._last_tick_time.get(connection_id, 0) if connection_id in self._last_tick_time else 0):.3f}s")
+            
+            # Start timer for processing latency
+            proc_start_time = time.time()
+
             
             for tick in ticks:
                 instrument_token = tick.get('instrument_token')
@@ -835,6 +868,13 @@ class ManualZerodhaTradeConsumer(AsyncWebsocketConsumer):
                             # Don't break the loop, continue processing other ticks
                             continue
                     
+                    
+            proc_duration = time.time() - proc_start_time
+            if proc_duration > 0.1: # Log if processing takes more than 100ms
+                logger.warning(f"⚠️ Slow tick processing: {proc_duration:.3f}s for {len(ticks)} ticks")
+            else:
+                logger.debug(f"✅ Tick processing completed in {proc_duration:.3f}s")
+
         except Exception as e:
             logger.error(f"❌ Error processing market ticks: {e}")
             logger.error(traceback.format_exc())
