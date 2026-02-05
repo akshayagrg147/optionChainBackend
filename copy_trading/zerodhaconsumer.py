@@ -84,6 +84,10 @@ class UserState:
     step_size: Optional[float] = None
     reverse_token: Optional[int] = None
     reverse_trading_symbol: Optional[str] = None
+
+    # Normal trade persistence
+    normal_trade_buyLtp: Optional[float] = None
+    normal_pnl_percentage: Optional[float] = 0.0
     
     # Locks for thread safety
     order_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
@@ -870,7 +874,9 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                 'exchange': self.exchange_type,
                 'change': change,
                 'buy_price': user_state.buy_in_ltp,
-                'locked_ltp': user_state.locked_ltp
+                'locked_ltp': user_state.locked_ltp,
+                'normal_trade_buyLtp': user_state.normal_trade_buyLtp,
+                'normal_pnl_percentage': user_state.normal_pnl_percentage
             }
             await self.send(text_data=json.dumps(result))
             
@@ -930,7 +936,9 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                     'current_ltp': current_ltp,
                     'spot': self.latest_spot_price,
                     'pnl_percent': pnl_percent,
-                    'locked_ltp': user_state.locked_ltp
+                    'locked_ltp': user_state.locked_ltp,
+                    'normal_trade_buyLtp': user_state.normal_trade_buyLtp,
+                    'normal_pnl_percentage': user_state.normal_pnl_percentage
                 }))
 
                 # Check sell condition
@@ -989,7 +997,9 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                         user_state.buy_quantity = quantity
                         user_state.buy_in_ltp = float(order_details['average_price'])
                         user_state.ltp_at_order = user_state.buy_in_ltp
-                        
+                        # Capture normal trade buy LTP
+                        user_state.normal_trade_buyLtp = user_state.buy_in_ltp
+                                                
                         if option_type == "CE":
                             user_state.reverse_token = user_state.ce_reverse_token
                             user_state.reverse_trading_symbol = user_state.ce_reverse_trading_symbol
@@ -1092,6 +1102,9 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                         user_state.sell_in_ltp = float(order_details['average_price'])
                         PnL = round(((user_state.sell_in_ltp - user_state.buy_in_ltp) / user_state.buy_in_ltp) * 100, 2)
                         
+                        # Capture normal trade PnL
+                        user_state.normal_pnl_percentage = PnL
+                        
                         self.log_order_event(
                             user_state.account_name,
                             "✅ SELL Order Placed",
@@ -1131,6 +1144,10 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                             user_state.locked_ltp = None
                             user_state.previous_ltp = None
                             
+                            # Reset normal trade persistence
+                            user_state.normal_trade_buyLtp = None
+                            user_state.normal_pnl_percentage = 0.0
+                                                        
                             await self.send(text_data=json.dumps({
                                 'message': 'Trading completed - No reverse trade',
                                 'user_id': user_state.user_id,
