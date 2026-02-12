@@ -7,7 +7,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-LOG_FILE = os.path.join(os.getcwd(), "websocket_stream.log")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+LOG_FILE = os.path.join(BASE_DIR, "websocket_stream.log")
+
 
 
 logger = logging.getLogger("WebSocketLogger")

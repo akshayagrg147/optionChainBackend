@@ -1297,8 +1297,14 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                         user_state.previous_ltp = None
                         
                         # Reactivate monitoring flags
-                        user_state.order_placedCE = True
                         user_state.order_placedPE = True
+                        
+                        # Determine buy type
+                        buy_type = "UNKNOWN"
+                        if reverse_token == user_state.ce_token:
+                            buy_type = "CE"
+                        elif reverse_token == user_state.pe_token:
+                            buy_type = "PE"
                         
                         self.log_order_event(
                             user_state.account_name,
@@ -1320,6 +1326,7 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                             'user_id': user_state.user_id,
                             'account_name': user_state.account_name,
                             'BUY_LTP': price,
+                            'Type': buy_type,
                             'reverse_trade': True
                         }))
                         
