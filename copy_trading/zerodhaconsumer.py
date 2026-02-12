@@ -1301,10 +1301,12 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                         
                         # Determine buy type
                         buy_type = "UNKNOWN"
-                        if reverse_token == user_state.ce_token:
+                        if reverse_trading_symbol.endswith("CE"):
                             buy_type = "CE"
-                        elif reverse_token == user_state.pe_token:
+                        elif reverse_trading_symbol.endswith("PE"):
                             buy_type = "PE"
+                        
+                        print(f"📊 Buy Type identified from {reverse_trading_symbol}: {buy_type}")
                         
                         self.log_order_event(
                             user_state.account_name,
