@@ -88,7 +88,10 @@ class UserState:
     # Normal trade persistence
     normal_trade_buyLtp: Optional[float] = None
     normal_pnl_percentage: Optional[float] = 0.0
-    
+
+    # Reverse position tracking (True when holding reverse position, for sell message)
+    is_reverse_position: bool = False
+
     # Locks for thread safety
     order_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     last_tick_time: float = 0
@@ -1011,13 +1014,26 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                         new_tokens = list(set(self.current_subscribed_tokens + [user_state.buy_token]))
                         await self.update_subscription(new_tokens)
                         
+                        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                         await self.send(text_data=json.dumps({
                             'message': 'Order placed successfully...Waiting for square off',
                             'user_id': user_state.user_id,
                             'account_name': user_state.account_name,
                             'BUY_LTP': user_state.buy_in_ltp,
                             'Type': option_type,
-                            'subscription_updated': True
+                            'subscription_updated': True,
+                            # Log fields for frontend
+                            'token_purchase': user_state.buy_token,
+                            'Token_Purchase': user_state.buy_token,
+                            'trading_symbol': user_state.buy_trading_symbol,
+                            'Trading_Symbol': user_state.buy_trading_symbol,
+                            'market_value': self.latest_spot_price,
+                            'marketValue': self.latest_spot_price,
+                            'quantity': quantity,
+                            'qty': quantity,
+                            'total_amount': user_state.total_amount,
+                            'investable_amount': user_state.investable_amount,
+                            'timestamp': timestamp,
                         }))
                         
                         self.log_order_event(
@@ -1121,14 +1137,34 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                             }
                         )
                         
-                        await self.send(text_data=json.dumps({
-                            'message': 'SELL Order placed successfully',
+                        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        sell_message = 'Reverse Trade SELL Order placed successfully' if user_state.is_reverse_position else 'SELL Order placed successfully'
+                        sell_payload = {
+                            'message': sell_message,
                             'user_id': user_state.user_id,
                             'account_name': user_state.account_name,
                             'SELL_LTP': user_state.sell_in_ltp,
-                            "pnl_percentage": PnL,
-                        }))
-                        
+                            'pnl_percentage': PnL,
+                            # Log fields for frontend
+                            'token_purchase': user_state.buy_token,
+                            'Token_Purchase': user_state.buy_token,
+                            'trading_symbol': user_state.buy_trading_symbol,
+                            'Trading_Symbol': user_state.buy_trading_symbol,
+                            'market_value': self.latest_spot_price,
+                            'marketValue': self.latest_spot_price,
+                            'quantity': user_state.buy_quantity,
+                            'qty': user_state.buy_quantity,
+                            'total_amount': user_state.total_amount,
+                            'investable_amount': user_state.investable_amount,
+                            'timestamp': timestamp,
+                        }
+                        if user_state.is_reverse_position:
+                            sell_payload['reverse_trade_sell'] = True
+                        await self.send(text_data=json.dumps(sell_payload))
+
+                        if user_state.is_reverse_position:
+                            user_state.is_reverse_position = False
+
                         if user_state.reverse_Trade == "ON" and PnL < user_state.expected_profit_percent:
                             await self.execute_reverse_trade(user_state, PnL)
                         else:
@@ -1290,7 +1326,8 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                         user_state.buy_quantity = quantity
                         user_state.reverse_Trade = "OFF"
                         user_state.investable_amount = new_investable
-                        
+                        user_state.is_reverse_position = True  # Mark for reverse trade sell message
+
                         # Reset sell flag to continue tracking
                         user_state.sell_order_placed = False
                         user_state.locked_ltp = None
@@ -1323,13 +1360,26 @@ class LiveOptionDataConsumerZerodha(AsyncWebsocketConsumer):
                             }
                         )
                         
+                        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                         await self.send(text_data=json.dumps({
                             'message': 'Reverse Order placed successfully...Waiting for square off',
                             'user_id': user_state.user_id,
                             'account_name': user_state.account_name,
                             'BUY_LTP': price,
                             'Type': buy_type,
-                            'reverse_trade': True
+                            'reverse_trade': True,
+                            # Log fields for frontend
+                            'token_purchase': reverse_token,
+                            'Token_Purchase': reverse_token,
+                            'trading_symbol': reverse_trading_symbol,
+                            'Trading_Symbol': reverse_trading_symbol,
+                            'market_value': self.latest_spot_price,
+                            'marketValue': self.latest_spot_price,
+                            'quantity': quantity,
+                            'qty': quantity,
+                            'total_amount': user_state.total_amount,
+                            'investable_amount': new_investable,
+                            'timestamp': timestamp,
                         }))
                         
                     else:
